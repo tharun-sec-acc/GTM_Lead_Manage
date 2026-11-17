@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     bedrock_model_id: str = ""
     company_intelligence_enabled: bool = False
     research_browser_enabled: bool = False
+    research_browser_wait_ms: int = 10000
     research_search_provider: str = ""
     research_search_api_key: str = ""
     research_discovery_enabled: bool = True

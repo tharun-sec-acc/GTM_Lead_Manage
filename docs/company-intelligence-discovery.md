@@ -87,6 +87,8 @@ is unimplemented.
 | `RESEARCH_DISCOVERY_WIKIPEDIA_ENABLED` | `true` | Wikipedia/Wikidata keyless index adapter. |
 | `RESEARCH_DISCOVERY_SEC_ENABLED` | `true` | SEC EDGAR Atom adapter. |
 | `RESEARCH_DISCOVERY_GLEIF_ENABLED` | `true` | GLEIF legal-entity registry adapter (keyless). |
+| `RESEARCH_BROWSER_ENABLED` | `false` | Enables the text-only Playwright render of JavaScript shells. |
+| `RESEARCH_BROWSER_WAIT_MS` | `10000` | How long the browser waits for rendered body text before collecting what is available. |
 
 No search-provider key is read or required. External providers, if ever added, must be opt-in
 adapters with explicit configuration, cost visibility and operator approval.

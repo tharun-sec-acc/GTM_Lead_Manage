@@ -107,13 +107,32 @@ class BrowserRenderer:
             page = context.new_page()
             timeout = max(1, int(min(settings.research_request_timeout, self.deadline - time.monotonic()) * 1000))
             page.goto(response.url, wait_until="domcontentloaded", timeout=timeout)
+            wait_ms = max(1, min(settings.research_browser_wait_ms,
+                                   int((self.deadline - time.monotonic()) * 1000)))
             try:
                 page.wait_for_function(
                     "document.body && document.body.innerText.trim().length >= 200",
-                    timeout=max(1, min(4000, int((self.deadline - time.monotonic()) * 1000))),
+                    timeout=wait_ms,
                 )
             except PlaywrightTimeout:
                 self.notes.append("Browser content wait expired; only available rendered text was collected.")
+                try:
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    page.wait_for_timeout(min(2500, max(0, int(
+                        (self.deadline - time.monotonic()) * 1000))))
+                except PlaywrightError:
+                    pass
+            # Trigger lazily hydrated sections and counters, then settle before snapshotting.
+            try:
+                for _ in range(3):
+                    if time.monotonic() >= self.deadline:
+                        break
+                    page.evaluate("window.scrollBy(0, Math.max(window.innerHeight, 400))")
+                    page.wait_for_timeout(min(300, max(0, int((self.deadline - time.monotonic()) * 1000))))
+                page.evaluate("window.scrollTo(0, 0)")
+                page.wait_for_timeout(300)
+            except PlaywrightError:
+                pass
             if time.monotonic() >= self.deadline or (self.cancelled and self.cancelled()):
                 raise SourceError("Browser collection stopped at its cancellation or duration limit.")
             html = page.content().encode("utf-8")
