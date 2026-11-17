@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: prospecting
+      POSTGRES_USER: prospecting
+      POSTGRES_PASSWORD: prospecting
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prospecting -d prospecting"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    build: ./backend
+    env_file: .env
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  worker:
+    build: ./backend
+    env_file: .env
+    command: celery -A app.tasks:celery_app worker --loglevel=INFO
+    depends_on:
+      api:
+        condition: service_started
+  scheduler:
+    build: ./backend
+    env_file: .env
+    command: celery -A app.tasks:celery_app beat --loglevel=INFO --schedule=/tmp/celerybeat-schedule
+    depends_on:
+      api:
+        condition: service_started
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+volumes:
+  postgres_data:
+  redis_data:

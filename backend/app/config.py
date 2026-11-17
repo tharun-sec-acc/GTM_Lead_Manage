@@ -1,0 +1,63 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    database_url: str = "postgresql+psycopg://prospecting:prospecting@db:5432/prospecting"
+    redis_url: str = "redis://redis:6379/0"
+    apollo_api_key: str = ""
+    gmail_address: str = ""
+    gmail_app_password: str = ""
+    mail_send_enabled: bool = False
+    mail_unsubscribe_enabled: bool = True
+    tracking_enabled: bool = False
+    public_base_url: str = ""
+    daily_send_limit: int = 50
+    aws_region: str = ""
+    bedrock_model_id: str = ""
+    company_intelligence_enabled: bool = False
+    research_browser_enabled: bool = False
+    research_search_provider: str = ""
+    research_search_api_key: str = ""
+    research_discovery_enabled: bool = True
+    research_discovery_max_candidates: int = 30
+    research_discovery_max_domains: int = 12
+    research_discovery_max_candidates_per_domain: int = 4
+    research_discovery_min_score: float = 0.45
+    research_discovery_max_bytes: int = 4_000_000
+    research_discovery_deadline_seconds: int = 90
+    research_discovery_wikipedia_enabled: bool = True
+    research_discovery_sec_enabled: bool = True
+    research_discovery_gleif_enabled: bool = True
+    research_max_concurrent_agents: int = 3
+    research_max_pages_per_company: int = 12
+    research_max_crawl_depth: int = 2
+    research_request_timeout: int = 12
+    research_max_duration_seconds: int = 120
+    research_cache_ttl_hours: int = 24
+    research_max_retries: int = 2
+    research_max_content_size: int = 2_000_000
+    research_max_total_content_size: int = 8_000_000
+    research_daily_budget: int = 100
+    research_daily_bedrock_calls: int = 500
+    research_daily_source_bytes: int = 50_000_000
+    microsoft_tenant_id: str = ""
+    microsoft_client_id: str = ""
+    microsoft_client_secret: str = ""
+    microsoft_redirect_uri: str = "http://localhost:8000/microsoft/oauth/callback"
+    microsoft_organizer_email: str = ""
+    microsoft_token_encryption_key: str = ""
+    microsoft_graph_base_url: str = "https://graph.microsoft.com/v1.0"
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/google/oauth/callback"
+    google_workspace_organizer_email: str = ""
+    google_token_encryption_key: str = ""
+    meeting_timezone: str = "UTC"
+    meeting_duration_minutes: int = 30
+    meeting_workday_start_hour: int = 9
+    meeting_workday_end_hour: int = 17
+    meeting_booking_window_days: int = 30
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+
+settings = Settings()
