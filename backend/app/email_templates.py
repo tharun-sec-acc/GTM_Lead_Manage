@@ -1,4 +1,4 @@
-﻿"""Global and product-scoped email template CRUD with versioning and preview."""
+"""Global and product-scoped email template CRUD with versioning and preview."""
 
 import re
 from datetime import datetime, timezone
@@ -36,7 +36,7 @@ SAMPLE_VALUES: dict[str, str] = {
     "contact_title": "VP of Operations",
     "contact_department": "Operations",
     "contact_seniority": "vp",
-    "product_name": "Vehicle Digital Inspection",
+    "product_name": "VDI",
     "product_value_proposition": "Streamline your inspection workflow.",
     "reviewed_research_facts": "Acme operates 12 regional depots.",
     "product_opportunity_summary": "Strong fit for fleet inspection use case.",

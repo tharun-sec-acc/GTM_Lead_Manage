@@ -9,7 +9,7 @@ This repository contains a standalone sales prospecting pilot: upload Excel, sea
 Product workspaces are implemented incrementally on the existing application: shared master companies with
 product associations, product-scoped imports and campaigns, product overview and consolidated global
 overview, hybrid versioned email templates, attachments, and product opportunity analysis over shared
-company research. Migration head is `0012_product_attribution`; migrations are additive and preserve
+company research. Migration head is `0013_research_discovery`; migrations are additive and preserve
 existing records. See [multi-product architecture](docs/multi-product-architecture.md), [product API](docs/product-api.md)
 and [migration, deployment and rollback](docs/product-migration-and-deployment.md).
 
@@ -17,13 +17,11 @@ The [repository audit and milestone map](docs/multi-product-implementation-plan.
 existing relationships and preservation risks; its status section is historical and was superseded by the
 implemented routes, migrations and workspaces named above.
 
-**Verification (17 November 2026):** the full backend suite ran to completion with **180 tests passing**
-(`backend: ..\.venv\Scripts\python.exe -m pytest -q`), including product CRUD, product-scoped import,
-cross-product campaign/enrollment rejection, templates and existing research/outreach coverage. The earlier
-`TestClient` stall no longer reproduces in this environment. Frontend type-check and browser tests were **not**
-run in that session because Node.js/npm were not on `PATH` and no bundled Node runtime was present. No live
-Apollo, Bedrock, Gmail, Microsoft Graph or research provider calls were made, and no credentials or
-environment settings were changed.
+**Verification (17 November 2026):** the full backend suite ran to completion with **205 tests passing**
+(`backend: PYTHONPATH=. ../.venv_new/bin/pytest tests/ -q`), including LeadRoad <> DENSO Solwer TWMS copy
+automation, immediate draft pre-population, mailbox synchronization, received mail analytics, attachments, product CRUD,
+product-scoped import, cross-product campaign/enrollment rejection, templates and existing research/outreach coverage.
+Frontend type-check (`npm run typecheck`) and Next.js 15 production build (`npm run build`) completed with 0 errors across all 9 routes.
 
 ## What exists today
 

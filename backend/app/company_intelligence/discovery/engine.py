@@ -113,7 +113,7 @@ def _persist_tasks(run_id: str, queries) -> list[dict]:
 
 
 def _discover(domain: str, company_name: str, seed_texts: list[str], seed_links: list[str],
-              deadline: float, limitations: list[str]) -> list[adapters.Candidate]:
+              deadline: float, limitations: list[str], queries=None) -> list[adapters.Candidate]:
     limit = max(10, min(500, settings.research_discovery_max_candidates * 12))
     raw: list[adapters.Candidate] = []
 
@@ -130,7 +130,9 @@ def _discover(domain: str, company_name: str, seed_texts: list[str], seed_links:
     attempt("Outbound link", lambda: adapters.link_candidates(seed_links, domain, limit))
     if settings.research_discovery_wikipedia_enabled:
         attempt("Wikipedia/Wikidata", lambda: adapters.directory_candidates(
-            company_name, deadline, 4, limitations))
+            company_name, deadline, 6, limitations))
+    attempt("News RSS", lambda: adapters.news_rss_candidates(
+        company_name, [q.text for q in queries] if queries else None, deadline, 10, limitations))
     if settings.research_discovery_sec_enabled:
         attempt("SEC EDGAR", lambda: adapters.sec_edgar_candidates(
             company_name, deadline, 5, limitations))
@@ -433,7 +435,7 @@ def run_discovery(job_id: str, company_id: str, company_name: str, domain: str, 
         counters["discovery_tasks_created"] = len(queries)
         terms = query_terms(queries, company_name)
         raw = _discover(domain, company_name, seed_texts or [], seed_links or [],
-                        deadline, limitations)
+                        deadline, limitations, queries=queries)
         counters["candidate_urls_discovered"] = len(raw)
         selected = _select_candidates(raw, context, terms, counters)
         rows = _persist_candidates(run_id, company_id, selected)

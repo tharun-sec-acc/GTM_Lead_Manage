@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     public_base_url: str = ""
     daily_send_limit: int = 50
     aws_region: str = ""
+    aws_s3_bucket: str = "gtmprospecting-meeting-artifacts"
+    aws_s3_upload_enabled: bool = False
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
     bedrock_model_id: str = ""
     company_intelligence_enabled: bool = False
     research_browser_enabled: bool = False
@@ -30,8 +34,8 @@ class Settings(BaseSettings):
     research_discovery_sec_enabled: bool = True
     research_discovery_gleif_enabled: bool = True
     research_max_concurrent_agents: int = 3
-    research_max_pages_per_company: int = 12
-    research_max_crawl_depth: int = 2
+    research_max_pages_per_company: int = 25
+    research_max_crawl_depth: int = 3
     research_request_timeout: int = 12
     research_max_duration_seconds: int = 120
     research_cache_ttl_hours: int = 24
@@ -53,6 +57,10 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://localhost:8000/google/oauth/callback"
     google_workspace_organizer_email: str = ""
     google_token_encryption_key: str = ""
+    google_calendar_enabled: bool = True
+    google_meet_enabled: bool = True
+    google_drive_enabled: bool = True
+    google_workspace_events_enabled: bool = False
     meeting_timezone: str = "UTC"
     meeting_duration_minutes: int = 30
     meeting_workday_start_hour: int = 9

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import SessionLocal
 from app.mailbox import lock_mail_workflow, poll_mailbox
-from app.models import (Campaign, EmailEvent, EmailMessage, EmailReply, Enrollment,
+from app.models import (Campaign, EmailAttachment, EmailEvent, EmailMessage, EmailReply, Enrollment,
                         MailboxState, Suppression, TrackingLink, now)
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,131 @@ def public_base():
     return base
 
 
-def message_content(session: Session, message: EmailMessage, enrollment: Enrollment):
+def _clean_plain_text(text: str) -> str:
+    """Clean plain-text version of email: strip dummy placeholder text and markdown delimiters."""
+    if not text:
+        return ""
+    # Strip accidental unedited placeholder tokens
+    cleaned = re.sub(r"\*\*Bold Text\*\*", "", text, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\*Italic Text\*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\*\*bold\*\*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\*italic\*", "", cleaned, flags=re.IGNORECASE)
+
+    # Strip markdown bold & italic delimiters: **word** -> word, *word* -> word
+    cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"\*(.+?)\*", r"\1", cleaned)
+    cleaned = re.sub(r"(?<!\w)__(.+?)__(?!\w)", r"\1", cleaned)
+    cleaned = re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"\1", cleaned)
+
+    # Markdown links: [anchor](url) -> anchor (url)
+    cleaned = re.sub(r"\[([^\]]+)\]\((https?://[^\s\)]+)\)", r"\1 (\2)", cleaned)
+    return cleaned.strip()
+
+
+def _inline_markdown_to_html(text: str) -> str:
+    """Format inline markdown elements: bold, italic, links, URLs."""
+    s = html.escape(text)
+
+    # Markdown bold: **text** or __text__ -> <strong>text</strong>
+    s = re.sub(r"\*\*(.+?)\*\*", r'<strong style="font-weight: 600; color: #0f172a;">\1</strong>', s)
+    s = re.sub(r"(?<!\w)__(.+?)__(?!\w)", r'<strong style="font-weight: 600; color: #0f172a;">\1</strong>', s)
+
+    # Markdown italic: *text* or _text_ -> <em>text</em>
+    s = re.sub(r"(?<!\*)\*([^*]+?)\*(?!\*)", r"<em>\1</em>", s)
+    s = re.sub(r"(?<!\w)_([^_]+?)_(?!\w)", r"<em>\1</em>", s)
+
+    # Markdown link: [text](https://...) -> <a href="...">text</a>
+    s = re.sub(r"\[([^\]]+)\]\((https?://[^\s\)]+)\)", r'<a href="\2" style="color: #0284c7; text-decoration: underline;">\1</a>', s)
+
+    # Autolink raw URLs (not already inside href="...")
+    def _link_replace(m):
+        u = m.group(0)
+        return f'<a href="{u}" style="color: #0284c7; text-decoration: underline;">{u}</a>'
+
+    s = re.sub(r'(?<!href=")(?<!">)https?://[^\s<"\']+', _link_replace, s)
+    return s
+
+
+def _markdown_to_email_html(text: str, tracking_pixel_url: str | None = None) -> str:
+    """
+    Render email body markdown into clean, sanitized HTML email with proper
+    bold (<strong>), italic (<em>), bullet lists (<ul><li>), paragraphs (<p>),
+    and links (<a>) suitable for Gmail, Outlook, Apple Mail, and mobile clients.
+    """
+    if not text:
+        text = ""
+
+    # Strip accidental unedited placeholder tokens
+    t = re.sub(r"\*\*Bold Text\*\*", "", text, flags=re.IGNORECASE)
+    t = re.sub(r"\*Italic Text\*", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\*\*bold\*\*", "", t, flags=re.IGNORECASE)
+    t = re.sub(r"\*italic\*", "", t, flags=re.IGNORECASE)
+    t = t.strip()
+
+    raw_blocks = re.split(r"\n\s*\n", t)
+    html_blocks = []
+
+    for block in raw_blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        lines = block.split("\n")
+        is_list = all(re.match(r"^\s*([*\-•]|\d+\.)\s+", l) for l in lines if l.strip())
+
+        if is_list:
+            items = []
+            for line in lines:
+                m = re.match(r"^\s*([*\-•]|\d+\.)\s+(.*)$", line)
+                item_content = m.group(2) if m else line
+                item_html = _inline_markdown_to_html(item_content)
+                items.append(f'<li style="margin-bottom: 6px;">{item_html}</li>')
+            html_blocks.append(
+                f'<ul style="margin: 0 0 16px 0; padding-left: 22px; font-size: 15px; line-height: 1.6; color: #1e293b;">\n'
+                + "\n".join(items)
+                + "\n</ul>"
+            )
+        else:
+            line_htmls = [_inline_markdown_to_html(l) for l in lines]
+            content = "<br>\n".join(line_htmls)
+            html_blocks.append(
+                f'<p style="margin: 0 0 16px 0; line-height: 1.6; font-size: 15px; color: #1e293b;">{content}</p>'
+            )
+
+    pixel_html = ""
+    if tracking_pixel_url:
+        pixel_safe = html.escape(tracking_pixel_url, quote=True)
+        pixel_html = f'<img src="{pixel_safe}" width="1" height="1" alt="" style="display:none !important;" />'
+
+    body_content = "\n".join(html_blocks)
+    return (
+        '<!DOCTYPE html>\n'
+        '<html>\n<head>\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
+        '<style>\n'
+        'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; color: #1e293b; margin: 0; padding: 16px; background-color: #ffffff; }\n'
+        'p { margin: 0 0 16px 0; line-height: 1.6; font-size: 15px; color: #1e293b; }\n'
+        'strong { font-weight: 600; color: #0f172a; }\n'
+        'em { font-style: italic; }\n'
+        'ul { margin: 0 0 16px 0; padding-left: 22px; }\n'
+        'li { margin-bottom: 6px; }\n'
+        'a { color: #0284c7; text-decoration: underline; }\n'
+        '</style>\n</head>\n'
+        '<body>\n'
+        f'<div style="max-width: 600px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif;">\n'
+        f'{body_content}\n'
+        f'{pixel_html}\n'
+        '</div>\n</body>\n</html>'
+    )
+
+
+def message_content(
+    session: Session,
+    message: EmailMessage,
+    enrollment: Enrollment,
+    explicit_attachments: list[EmailAttachment] | None = None,
+):
     base = public_base() if settings.mail_unsubscribe_enabled else None
     tracking = settings.tracking_enabled
     if tracking and base is None:
@@ -54,32 +178,65 @@ def message_content(session: Session, message: EmailMessage, enrollment: Enrollm
     if unsubscribe_url:
         mime["List-Unsubscribe"] = f"<{unsubscribe_url}>"
         mime["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
-    previous = session.scalars(select(EmailMessage).where(
-        EmailMessage.enrollment_id == enrollment.id, EmailMessage.id != message.id,
-        EmailMessage.status == "sent").order_by(EmailMessage.sent_at)).all()
-    reply = session.get(EmailReply, message.reply_to_id) if message.reply_to_id else None
-    thread_ids = [item.message_id for item in previous]
-    if reply and reply.incoming_message_id and "\n" not in reply.incoming_message_id and "\r" not in reply.incoming_message_id:
-        thread_ids.append(reply.incoming_message_id)
-    if thread_ids:
-        mime["In-Reply-To"] = thread_ids[-1]
-        mime["References"] = " ".join(thread_ids)
-    mime.set_content(body)
-    if tracking:
-        pixel = f'{base}/public/open/{message.open_token}'
-        parts = []
-        cursor = 0
-        for match in re.finditer(r"https://[^\s<>'\"]+", body):
-            parts.append(html.escape(body[cursor:match.start()]))
-            url = html.escape(match.group(), quote=True)
-            parts.append(f'<a href="{url}">{url}</a>')
-            cursor = match.end()
-        parts.append(html.escape(body[cursor:]))
-        mime.add_alternative(
-            f'<html><body><p>{"".join(parts).replace(chr(10), "<br>")}</p>'
-            f'<img src="{html.escape(pixel, quote=True)}" width="1" height="1" alt=""></body></html>',
-            subtype="html",
-        )
+
+    # Only thread follow-ups or replies; initial outreach (step 0 without reply_to) should be a fresh conversation
+    if message.step_number > 0 or message.reply_to_id:
+        previous = session.scalars(select(EmailMessage).where(
+            EmailMessage.enrollment_id == enrollment.id, EmailMessage.id != message.id,
+            EmailMessage.status == "sent").order_by(EmailMessage.sent_at)).all()
+        reply = session.get(EmailReply, message.reply_to_id) if message.reply_to_id else None
+        thread_ids = [item.message_id for item in previous]
+        if reply and reply.incoming_message_id and "\n" not in reply.incoming_message_id and "\r" not in reply.incoming_message_id:
+            thread_ids.append(reply.incoming_message_id)
+        if thread_ids:
+            mime["In-Reply-To"] = thread_ids[-1]
+            mime["References"] = " ".join(thread_ids)
+
+    # Set clean text/plain body as the base payload (markdown stripped)
+    clean_text = _clean_plain_text(body)
+    mime.set_content(clean_text)
+
+    # Attach all files into the same MIME multipart envelope
+    if explicit_attachments is not None:
+        attachments = explicit_attachments
+    else:
+        attachments = session.scalars(
+            select(EmailAttachment).where(
+                EmailAttachment.message_id == message.id,
+                EmailAttachment.upload_status == "complete",
+            )
+        ).all()
+
+    # Add HTML alternative when tracking is enabled, attachments are present, or body has rich formatting
+    has_rich_formatting = bool(
+        re.search(r"\*\*|\*|_|\[.+?\]\(.+?\)|^\s*[*\-•]\s+", body, re.MULTILINE)
+        or "<p>" in body or "<br>" in body or "<strong>" in body or "<b>" in body or "<ul>" in body
+    )
+    if tracking or attachments or has_rich_formatting:
+        pixel = f"{base}/public/open/{message.open_token}" if (tracking and base) else None
+        html_markup = _markdown_to_email_html(body, tracking_pixel_url=pixel)
+        mime.add_alternative(html_markup, subtype="html")
+
+    if attachments:
+        from app.storage import get_storage
+        storage = get_storage()
+        for att in attachments:
+            try:
+                raw_bytes = storage.retrieve(att.storage_key)
+                mtype, _, stype = (att.content_type or "application/octet-stream").partition("/")
+                safe_name = getattr(att, "filename_safe", getattr(att, "file_name", "attachment.pdf"))
+                mime.add_attachment(
+                    raw_bytes,
+                    maintype=mtype or "application",
+                    subtype=stype or "octet-stream",
+                    filename=safe_name,
+                )
+                logger.info(
+                    "Attached file %s (%d bytes) to message %s along with body",
+                    safe_name, len(raw_bytes), message.id,
+                )
+            except Exception as exc:
+                logger.warning("Failed to attach file %s: %s", getattr(att, "filename_safe", "unknown"), exc)
     return mime
 
 

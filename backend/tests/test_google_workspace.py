@@ -186,3 +186,71 @@ def test_booking_reconsent_does_not_replace_credentials_without_permission(works
         expected_token = b"new-refresh" if granted else b"old-refresh"
         assert google.cipher().decrypt(credential.refresh_token_encrypted) == expected_token
     assert client.get("/google/oauth/status").json()["booking_access"] is granted
+
+
+def test_oauth_handles_dynamic_and_expanded_scopes_without_500(workspace, monkeypatch):
+    client, factory = workspace
+    start = client.get("/google/oauth/start", follow_redirects=False)
+    state = parse_qs(urlsplit(start.headers["location"]).query)["state"][0]
+
+    # Simulate Google returning expanded MEETING_FULL_SCOPES + drive
+    class RealWorldGoogleFlow:
+        credentials = SimpleNamespace(
+            refresh_token="fresh-google-refresh-token",
+            id_token="google-id-token",
+            granted_scopes=google.MEETING_FULL_SCOPES,
+            scopes=google.MEETING_FULL_SCOPES,
+        )
+        def fetch_token(self, code):
+            assert code == "valid-auth-code"
+
+    monkeypatch.setattr(google, "oauth_flow", lambda *args, **kwargs: RealWorldGoogleFlow())
+    monkeypatch.setattr(google.id_token, "verify_oauth2_token",
+                        lambda *args: {"email": "organizer@example.com", "email_verified": True})
+
+    response = client.get(f"/google/oauth/callback?state={state}&code=valid-auth-code", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "http://localhost:3000/meetings?google=connected"
+    with factory() as session:
+        credential = session.get(GoogleOAuthCredential, "organizer")
+        assert credential is not None
+        assert google.cipher().decrypt(credential.refresh_token_encrypted) == b"fresh-google-refresh-token"
+        assert google.DRIVE_READONLY_SCOPE in credential.scopes
+        assert google.MEET_SPACE_SCOPE in credential.scopes
+
+
+def test_oauth_callback_handles_google_access_denied_error(workspace):
+    client, _ = workspace
+    start = client.get("/google/oauth/start", follow_redirects=False)
+    state = parse_qs(urlsplit(start.headers["location"]).query)["state"][0]
+
+    # Google user clicks 'Cancel' / Deny
+    response = client.get(f"/google/oauth/callback?state={state}&error=access_denied&error_description=User+denied+access", follow_redirects=False)
+    assert response.status_code == 400
+    assert "denied by the user" in response.json()["detail"]
+
+
+def test_s3_upload_disabled_and_local_transcript_preservation(tmp_path, monkeypatch):
+    from app.meetings.artifacts.storage_service import storage_service, MeetingStorageService
+    import app.config as cfg
+
+    test_archive = tmp_path / "attachments" / "meetings"
+    monkeypatch.setattr("app.meetings.artifacts.storage_service.LOCAL_ARCHIVE_ROOT", test_archive)
+    monkeypatch.setattr(cfg.settings, "aws_s3_upload_enabled", False)
+
+    svc = MeetingStorageService()
+    assert svc.is_s3_configured() is False
+
+    # Store transcript
+    test_vtt = b"WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n<v Carlos>Test</v>"
+    s3_key = svc.generate_s3_key("lead-123", "meeting-456", "transcripts", "transcript.vtt")
+    res = svc.store_bytes(test_vtt, s3_key, "text/vtt")
+
+    assert res["s3_bucket"] is None
+    assert res["s3_key"] == s3_key
+    assert test_archive.exists()
+
+    # Retrieve transcript from local storage
+    retrieved = svc.retrieve_bytes(s3_key)
+    assert retrieved == test_vtt
+

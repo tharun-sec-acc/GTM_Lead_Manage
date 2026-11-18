@@ -10,3 +10,4 @@ node_modules/
 coverage/
 frontend/test-results/
 frontend/playwright-report/
+backend/attachments/

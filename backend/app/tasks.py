@@ -21,9 +21,10 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     beat_schedule={
         "dispatch-pending-imports": {"task": "app.tasks.dispatch_pending", "schedule": 10.0},
-        "poll-inbox": {"task": "app.tasks.poll_inbox", "schedule": 60.0},
-        "dispatch-due-mail": {"task": "app.tasks.dispatch_due_mail", "schedule": 60.0},
-        "classify-replies": {"task": "app.tasks.classify_replies", "schedule": 120.0},
+        "poll-inbox": {"task": "app.tasks.poll_inbox", "schedule": 30.0},
+        "dispatch-due-mail": {"task": "app.tasks.dispatch_due_mail", "schedule": 30.0},
+        "classify-replies": {"task": "app.tasks.classify_replies", "schedule": 60.0},
+        "poll-meeting-artifacts": {"task": "app.tasks.poll_meeting_artifacts", "schedule": 300.0},
     },
 )
 
@@ -57,12 +58,10 @@ def poll_inbox():
         return
     try:
         with SessionLocal.begin() as session:
-            lock_mail_workflow(session)
             poll_mailbox(session)
     except RuntimeError as exc:
         logger.warning("Inbox polling failed: %s", exc)
         with SessionLocal.begin() as session:
-            lock_mail_workflow(session)
             state = session.get(MailboxState, 1)
             if state is None:
                 state = MailboxState(id=1, last_uid=0)
@@ -136,3 +135,50 @@ def run_company_research(job_id: str):
                         "failed", "Research encountered an internal worker error.", now()
                     )
         return {"status": "failed"}
+
+
+@celery_app.task(name="app.tasks.sync_meeting_artifacts_task")
+def sync_meeting_artifacts_task(meeting_id: str):
+    from app.meetings.models import Meeting
+    from app.meetings.service import meeting_service
+
+    try:
+        with SessionLocal.begin() as session:
+            result = meeting_service.sync_meeting_artifacts(session, meeting_id)
+        
+        # If transcripts were newly synced and no analysis exists, run Bedrock AI analysis automatically
+        with SessionLocal.begin() as session:
+            meeting = session.get(Meeting, meeting_id)
+            if meeting and meeting.transcripts and not meeting.analyses:
+                try:
+                    meeting_service.analyze_meeting(session, meeting_id)
+                except Exception as e:
+                    logger.info("Automatic analysis for meeting %s skipped or postponed: %s", meeting_id, e)
+        return result
+    except Exception as exc:
+        logger.warning("Failed to sync meeting artifacts for %s: %s", meeting_id, exc)
+        return {"status": "failed", "error": str(exc)}
+
+
+@celery_app.task(name="app.tasks.poll_meeting_artifacts")
+def poll_meeting_artifacts():
+    from datetime import timedelta
+    from sqlalchemy import or_
+    from app.meetings.models import Meeting
+
+    cutoff = now() - timedelta(days=2)
+    with SessionLocal() as session:
+        meetings = session.scalars(
+            select(Meeting).where(
+                Meeting.status.in_(["scheduled", "in_progress", "completed"]),
+                or_(
+                    Meeting.scheduled_start >= cutoff,
+                    Meeting.created_at >= cutoff,
+                ),
+            ).limit(20)
+        ).all()
+        meeting_ids = [m.id for m in meetings]
+
+    for mid in meeting_ids:
+        sync_meeting_artifacts_task.delay(mid)
+

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -38,7 +38,7 @@ export default function ProductSelector() {
   }, []);
 
   const activeSlug = pathname.match(/^\/products\/([^/]+)/)?.[1] ?? null;
-  const activeProduct = products.find((p) => p.slug === activeSlug);
+  const activeProduct = products.find((p) => p.slug === activeSlug || (activeSlug === "vehicle-digital-inspection" && p.slug === "vdi"));
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();

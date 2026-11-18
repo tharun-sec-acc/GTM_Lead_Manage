@@ -1,4 +1,4 @@
-﻿"""Product CRUD, product-lead associations, product-scoped import, and overview APIs."""
+"""Product CRUD, product-lead associations, product-scoped import, and overview APIs."""
 
 import re
 from datetime import datetime, timedelta, timezone
@@ -138,6 +138,18 @@ class ProductLeadUpdate(BaseModel):
 
 def _require_product(session: Session, product_id: str) -> Product:
     product = session.get(Product, product_id)
+    if not product:
+        product = session.scalar(select(Product).where(Product.slug == product_id))
+    # Alias compatibility for legacy slugs
+    if not product:
+        aliases = {
+            "vehicle-digital-inspection": "vdi",
+            "loss-tracker": "ie",
+            "aftermarket-super-app": "mce",
+        }
+        target_slug = aliases.get(product_id.lower())
+        if target_slug:
+            product = session.scalar(select(Product).where(Product.slug == target_slug))
     if not product:
         raise HTTPException(404, "Product not found.")
     return product
@@ -340,7 +352,8 @@ def remove_product_lead(product_id: str, lead_id: str, session: Session = Depend
 @router.get("/products/{product_id}/contacts")
 def product_contacts(product_id: str, limit: int = Query(default=250, ge=1, le=1000),
                      session: Session = Depends(get_db)):
-    _require_product(session, product_id)
+    product = _require_product(session, product_id)
+    product_id = product.id
     lead_ids = select(ProductLead.lead_id).where(ProductLead.product_id == product_id)
     rows = session.execute(
         select(Contact, Lead.company_name).join(Lead, Contact.lead_id == Lead.id)
@@ -361,7 +374,8 @@ def product_contacts(product_id: str, limit: int = Query(default=250, ge=1, le=1
 
 @router.get("/products/{product_id}/campaigns")
 def product_campaigns(product_id: str, session: Session = Depends(get_db)):
-    _require_product(session, product_id)
+    product = _require_product(session, product_id)
+    product_id = product.id
     campaigns = session.scalars(select(Campaign).where(
         Campaign.product_id == product_id
     ).order_by(Campaign.created_at.desc())).all()
@@ -379,7 +393,8 @@ class ProductCampaignCreate(BaseModel):
 @router.post("/products/{product_id}/campaigns", status_code=201)
 def create_product_campaign(product_id: str, data: ProductCampaignCreate,
                              session: Session = Depends(get_db)):
-    _require_active_product(session, product_id)
+    product = _require_active_product(session, product_id)
+    product_id = product.id
     if data.mode not in ("manual", "automatic") or any(day < 1 or day > 365 for day in data.delays):
         raise HTTPException(422, "Choose manual or automatic mode and delays between 1 and 365 days.")
     campaign = Campaign(name=data.name.strip(), mode=data.mode, delays=data.delays,
@@ -393,7 +408,8 @@ def create_product_campaign(product_id: str, data: ProductCampaignCreate,
 
 @router.get("/products/{product_id}/batches")
 def product_batches(product_id: str, session: Session = Depends(get_db)):
-    _require_product(session, product_id)
+    product = _require_product(session, product_id)
+    product_id = product.id
     batches = session.scalars(select(Batch).where(
         Batch.product_id == product_id
     ).order_by(Batch.created_at.desc()).limit(100)).all()
@@ -403,7 +419,8 @@ def product_batches(product_id: str, session: Session = Depends(get_db)):
 
 @router.get("/products/{product_id}/research")
 def product_research(product_id: str, session: Session = Depends(get_db)):
-    _require_product(session, product_id)
+    product = _require_product(session, product_id)
+    product_id = product.id
     lead_ids = select(ProductLead.lead_id).where(ProductLead.product_id == product_id)
     profile_ids = list(session.scalars(select(CompanyResearchProfile.id).where(
         CompanyResearchProfile.lead_id.in_(lead_ids)
@@ -424,7 +441,8 @@ def product_research(product_id: str, session: Session = Depends(get_db)):
 
 @router.get("/products/{product_id}/sales-tasks")
 def product_sales_tasks(product_id: str, session: Session = Depends(get_db)):
-    _require_product(session, product_id)
+    product = _require_product(session, product_id)
+    product_id = product.id
     campaign_ids = select(Campaign.id).where(Campaign.product_id == product_id)
     tasks = session.execute(
         select(SalesTask, EmailReply, Enrollment.lead_id, Lead.company_name)
@@ -452,7 +470,8 @@ def product_overview(
     end_date: str | None = Query(default=None),
     session: Session = Depends(get_db),
 ):
-    _require_product(session, product_id)
+    product = _require_product(session, product_id)
+    product_id = product.id
     start, end = _date_bound(start_date), _date_bound(end_date, end=True)
 
     lead_ids = list(session.scalars(
@@ -474,9 +493,21 @@ def product_overview(
     campaign_ids = list(session.scalars(campaign_query).all())
     campaigns_count = len(campaign_ids)
 
+    from sqlalchemy import or_
+
+    enrollment_conditions = []
+    if campaign_ids:
+        enrollment_conditions.append(Enrollment.campaign_id.in_(campaign_ids))
+    if lead_ids:
+        enrollment_conditions.append(Enrollment.lead_id.in_(lead_ids))
+        enrollment_conditions.append(
+            Enrollment.contact_id.in_(
+                select(Contact.id).where(Contact.lead_id.in_(lead_ids))
+            )
+        )
     enrollment_ids = list(session.scalars(select(Enrollment.id).where(
-        Enrollment.campaign_id.in_(campaign_ids)
-    )).all()) if campaign_ids else []
+        or_(*enrollment_conditions)
+    )).all()) if enrollment_conditions else []
 
     messages_by_status: dict[str, int] = {}
     if enrollment_ids:

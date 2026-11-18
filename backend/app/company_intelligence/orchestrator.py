@@ -127,7 +127,11 @@ def _agent_finish(job_id: str, agent: str, status: str, output: dict | None = No
 
 
 def _verified_quote(source: ResearchSource | None, quote: str, fact: ResearchFact) -> bool:
-    if not source or not quote or quote not in (source.content_text or ""):
+    if not source or not quote:
+        return False
+    norm_quote = re.sub(r"\s+", " ", quote).strip()
+    norm_source = re.sub(r"\s+", " ", source.content_text or "").strip()
+    if norm_quote not in norm_source:
         return False
     return quote_supports_fact(fact, quote, fact.category)
 
@@ -161,33 +165,127 @@ def _verify_facts(job_id: str) -> dict:
         return {"checked": len(facts), "reported": accepted - conflicting, "conflicting": conflicting}
 
 
-def _synthesize_report(job_id: str, company_id: str, limitations: list[str]) -> ResearchReport:
+def _format_executive_brief(company_name: str, grouped: dict[str, list[ResearchFact]]) -> str:
+    name = company_name or "The company"
+    paragraphs = []
+
+    # 1. Company identity and business
+    company_facts = [f for f in grouped.get("company", []) if f.verification_status == "reported"]
+    if company_facts:
+        lines = [f"{f.field_name}: {f.value}" for f in company_facts[:6]]
+        paragraphs.append(f"**Company Profile & Operations:** {name} is evidenced across public sources with the following core operations:\n" + "\n".join(f"• {line}" for line in lines))
+
+    # 2. Financial & Leadership
+    fin_facts = [f for f in grouped.get("financial", []) if f.verification_status == "reported"]
+    lead_facts = [f for f in grouped.get("leadership", []) if f.verification_status == "reported"]
+    fin_lead_lines = []
+    if lead_facts:
+        fin_lead_lines.append(f"Key Leadership: {', '.join(f'{f.field_name} ({f.value})' for f in lead_facts[:4])}")
+    if fin_facts:
+        fin_lead_lines.append(f"Financial Metrics: {', '.join(f'{f.field_name} {f.value}' for f in fin_facts[:4])}")
+    if fin_lead_lines:
+        paragraphs.append(f"**Leadership & Financial Overview:**\n" + "\n".join(f"• {line}" for line in fin_lead_lines))
+
+    # 3. Market, Signals & News
+    signals = [f for f in grouped.get("signals", []) if f.verification_status == "reported"]
+    news = [f for f in grouped.get("news", []) if f.verification_status == "reported"]
+    sig_lines = []
+    if news:
+        sig_lines.append(f"Recent Announcements: {', '.join(f'{f.field_name} ({f.value})' for f in news[:3])}")
+    if signals:
+        sig_lines.append(f"Operational & Technology Signals: {', '.join(f'{f.field_name}: {f.value}' for f in signals[:4])}")
+    if sig_lines:
+        paragraphs.append(f"**Strategic & Operational Signals:**\n" + "\n".join(f"• {line}" for line in sig_lines))
+
+    if not paragraphs:
+        all_reported = [f for cat in grouped.values() for f in cat if f.verification_status == "reported"][:8]
+        if all_reported:
+            return f"**Intelligence Summary for {name}:**\n" + "\n".join(f"• {f.field_name}: {f.value}" for f in all_reported)
+        return "No supported company facts were available from the retrieved sources."
+    return "\n\n".join(paragraphs)
+
+
+def _generate_report_narratives(company_name: str, profile_arn: str | None,
+                                facts_by_category: dict[str, list[dict]]) -> tuple[str, dict[str, str]]:
+    """Synthesize executive overview and section narratives using Bedrock if profile provided."""
+    if not profile_arn or not facts_by_category:
+        return "", {}
+    instruction = (
+        "You are an executive research synthesis analyst for DENSO sales and enterprise intelligence. "
+        "Based ONLY on the provided verified company facts, generate an executive company brief. "
+        "Return JSON with: "
+        "- 'summary': A comprehensive 2-3 paragraph executive summary of the company, covering what they do, their industry presence, operational scale/infrastructure/fleet, key leadership, and strategic direction. "
+        "- 'section_narratives': An object mapping category keys ('company', 'news', 'financial', 'funding', 'leadership', 'competitors', 'signals') "
+        "to a well-written 1-2 paragraph narrative briefing for that category explaining the facts in professional prose. "
+        "Only state facts directly evidenced in the provided data. Do not fabricate or extrapolate unsupported claims. "
+        "If a category has no facts, its narrative should be 'Not available from the retrieved public sources.'"
+    )
+    payload = {
+        "company_name": company_name,
+        "facts_by_category": facts_by_category,
+    }
+    try:
+        from app import bedrock
+        parsed = bedrock.converse_json(instruction, payload, model_id=model_id, max_tokens=4000)
+        summary = parsed.get("summary") or ""
+        narratives = parsed.get("section_narratives") or {}
+        if isinstance(summary, str) and summary.strip() and isinstance(narratives, dict):
+            return summary.strip(), {k: str(v) for k, v in narratives.items()}
+    except Exception as exc:
+        logger.warning("Bedrock executive synthesis failed (%s); using deterministic fact summary.", exc)
+    return "", {}
+
+
+def _synthesize_report(job_id: str, company_id: str, limitations: list[str],
+                       company_name: str = "", profile_arn: str | None = None) -> ResearchReport:
     with SessionLocal.begin() as session:
         job = session.get(ResearchJob, job_id)
+        if not company_name:
+            comp = session.get(CompanyResearchProfile, company_id)
+            if comp:
+                company_name = comp.company_name
         facts = session.scalars(select(ResearchFact).where(
             ResearchFact.job_id == job_id
         ).order_by(ResearchFact.category, ResearchFact.field_name)).all()
         grouped: dict[str, list[ResearchFact]] = {category: [] for category in RESEARCH_CATEGORIES}
         for fact in facts:
             grouped.setdefault(fact.category, []).append(fact)
+
+        facts_dict = {}
+        for category, items in grouped.items():
+            valid_items = [f for f in items if f.verification_status in {"reported", "conflicting"}]
+            if valid_items:
+                facts_dict[category] = [{"field_name": f.field_name, "value": f.value} for f in valid_items]
+
+        executive_summary, narratives = _generate_report_narratives(company_name, profile_arn, facts_dict)
+
         sections = []
         for category in RESEARCH_CATEGORIES:
             items = [item for item in grouped.get(category, [])
                      if item.verification_status in {"reported", "conflicting"}]
             fact_ids = [item.id for item in items]
-            text = "\n".join(f"{item.field_name}: {item.value}"
-                             + (" [conflicting; do not use for outreach]" if item.verification_status == "conflicting" else "")
-                             for item in items)
             run = session.scalar(select(ResearchAgentRun).where(
                 ResearchAgentRun.job_id == job_id, ResearchAgentRun.agent == category
             ))
-            if not text:
+
+            narrative = narratives.get(category, "").strip()
+            key_points = "\n".join(f"• {item.field_name}: {item.value}"
+                                   + (" [conflicting; do not use for outreach]" if item.verification_status == "conflicting" else "")
+                                   for item in items)
+            if narrative and key_points:
+                text = f"{narrative}\n\nKey Evidenced Points:\n{key_points}"
+            elif key_points:
+                text = key_points
+            elif narrative:
+                text = narrative
+            else:
                 text = ("Research not completed: " + run.error if run and run.status == "failed"
                         else "Not available from the retrieved public sources.")
-            elif run and run.status == "failed":
+            if run and run.status == "failed" and items:
                 text += "\nResearch incomplete: " + run.error
             elif any(item.verification_status == "conflicting" for item in items):
                 text += "\nConflicting claims are retained for review."
+
             sections.append({
                 "category": category,
                 "title": TITLES[category],
@@ -195,9 +293,11 @@ def _synthesize_report(job_id: str, company_id: str, limitations: list[str]) -> 
                 "fact_ids": fact_ids,
                 "text": text,
             })
-        summary_facts = [item for item in facts if item.verification_status == "reported"][:5]
-        summary = ("\n".join(f"{item.field_name}: {item.value}" for item in summary_facts)
-                   if summary_facts else "No supported company facts were available from the retrieved sources.")
+
+        if executive_summary:
+            summary = executive_summary
+        else:
+            summary = _format_executive_brief(company_name, grouped)
         if not limitations:
             limitations.append(
                 "Research used bounded discovery across the official site, sitemaps, feeds, "
@@ -288,10 +388,16 @@ def run_research_job(job_id: str) -> dict:
             with SessionLocal.begin() as session:
                 reserve_source_bytes(session, max_bytes)
             reserved = True
-            pages, crawl_notes, _total_bytes = gather_official_pages(
-                domain, max_pages, max_depth, max_bytes, cancelled=lambda: _job_cancelled(job_id)
-            )
-            limitations.extend(crawl_notes)
+            pages = []
+            try:
+                pages, crawl_notes, _total_bytes = gather_official_pages(
+                    domain, max_pages, max_depth, max_bytes, cancelled=lambda: _job_cancelled(job_id)
+                )
+                limitations.extend(crawl_notes)
+            except SourceError as exc:
+                limitations.append(f"Official website crawl not completed: {_error_text(str(exc))}")
+                _total_bytes = 0
+
             with SessionLocal.begin() as session:
                 for page in pages:
                     source = _source_from_page(session, company_id, domain, page)
@@ -299,7 +405,7 @@ def run_research_job(job_id: str) -> dict:
                         session.add(ResearchJobSource(job_id=job_id, source_id=source.id))
                         session.flush()
             pages_count = len(pages)
-            if settings.research_discovery_enabled and pages and not _job_cancelled(job_id):
+            if settings.research_discovery_enabled and not _job_cancelled(job_id):
                 try:
                     discovery = run_discovery(
                         job_id, company_id, company_name, domain,
@@ -317,9 +423,6 @@ def run_research_job(job_id: str) -> dict:
             if reserved:
                 with SessionLocal.begin() as session:
                     release_source_bytes(session, max_bytes - min(max_bytes, _total_bytes))
-        except SourceError as exc:
-            errors.append(_error_text(str(exc)))
-            pages_count = 0
         except BudgetExceeded as exc:
             errors.append(_error_text(str(exc)))
             pages_count = 0
@@ -402,7 +505,8 @@ def run_research_job(job_id: str) -> dict:
     report_id = None
     if synthesis_ready:
         try:
-            report = _synthesize_report(job_id, company_id, limitations + errors)
+            report = _synthesize_report(job_id, company_id, limitations + errors,
+                                        company_name=company_name, profile_arn=profile_arn)
             report_id = report.id
             _agent_finish(job_id, "synthesis", "completed", {"report_id": report.id})
         except Exception as exc:

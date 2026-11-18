@@ -8,10 +8,21 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_engine(settings.database_url, pool_pre_ping=True)
-SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+engine = create_engine(
+    settings.database_url,
+    pool_pre_ping=True,
+    pool_recycle=300,
+)
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
 
 
 def get_db():
-    with SessionLocal() as session:
+    session = SessionLocal()
+    try:
         yield session
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+

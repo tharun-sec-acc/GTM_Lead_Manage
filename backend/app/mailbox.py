@@ -2,6 +2,7 @@ import email
 import imaplib
 import hashlib
 import re
+from datetime import timedelta
 from email import policy
 from email.utils import parseaddr
 
@@ -74,7 +75,7 @@ def process_incoming(session: Session, raw: bytes, mailbox_uid: str):
     if sender and not is_dsn:
         for item in session.scalars(select(Enrollment).where(Enrollment.recipient == sender)).all():
             item.reply_blocked = True
-    if not enrollment and not is_dsn and not matching:
+    if not enrollment and not matching:
         return
     classification = None
     body = plain_body(message)
@@ -91,13 +92,44 @@ def process_incoming(session: Session, raw: bytes, mailbox_uid: str):
             if session.get(Suppression, recipient) is None:
                 session.add(Suppression(email=recipient, reason="hard_bounce"))
             classification = "hard_bounce"
-    session.add(EmailReply(
-        mailbox_uid=mailbox_uid, enrollment_id=enrollment.id if enrollment else None,
-        incoming_message_id=str(message.get("Message-ID", ""))[:998] or None,
-        original_email_id=original.id if original else None,
-        sender=sender or None, subject=str(message.get("Subject", ""))[:2000],
-        body=body, classification=classification,
-    ))
+    try:
+        with session.begin_nested():
+            reply = EmailReply(
+                mailbox_uid=mailbox_uid, enrollment_id=enrollment.id if enrollment else None,
+                incoming_message_id=str(message.get("Message-ID", ""))[:998] or None,
+                original_email_id=original.id if original else None,
+                sender=sender or None, subject=str(message.get("Subject", ""))[:2000],
+                body=body, classification=classification,
+            )
+            session.add(reply)
+            session.flush()
+    except Exception:
+        return
+
+    # Fast heuristic classification first to avoid blocking IMAP synchronization
+    if not classification and body:
+        from app import bedrock
+        fast_cls = bedrock.classify_reply_fast(body)
+        if fast_cls and fast_cls != "ambiguous":
+            classification = fast_cls
+        elif enrollment:
+            # Only run Bedrock Claude if email is matched to an active GTM prospect
+            try:
+                inferred = bedrock.classify_reply(body)
+                if inferred:
+                    classification = inferred
+            except Exception:
+                classification = "ambiguous"
+        else:
+            classification = "unrelated"
+
+    if classification:
+        reply.classification = classification
+        try:
+            from app.reply_actions import apply_classification
+            apply_classification(session, reply, classification)
+        except Exception:
+            pass
 
 
 def poll_mailbox(session: Session):
@@ -122,10 +154,23 @@ def poll_mailbox(session: Session):
             if state.uid_validity != validity or state.account != account:
                 state.uid_validity, state.last_uid = validity, 0
                 state.account = account
-            status, result = client.uid("search", None, "ALL")
+            since_date = (now() - timedelta(days=3)).strftime("%d-%b-%Y")
+            status, result = client.uid("search", None, "SINCE", since_date)
+            if status != "OK" or not result or not result[0]:
+                status, result = client.uid("search", None, "ALL")
             if status != "OK":
                 raise RuntimeError("Gmail inbox search failed.")
-            uids = [int(value) for value in (result[0] or b"").split() if int(value) > state.last_uid]
+            all_uids = [int(value) for value in (result[0] or b"").split()]
+            max_uid = max(all_uids) if all_uids else 0
+
+            # Prevent historical backlog starvation:
+            # If state.last_uid is far behind (> 500 messages behind newest mailbox UID),
+            # fast-forward state.last_uid so recent live emails are never starved by months of old personal mail.
+            if max_uid - state.last_uid > 500:
+                state.last_uid = max(state.last_uid, max_uid - 100)
+
+            uids = [uid for uid in all_uids if uid > state.last_uid]
+            account_id = hashlib.sha256(account.encode()).hexdigest()[:16]
             for uid in sorted(uids)[:100]:
                 status, parts = client.uid("fetch", str(uid), "(BODY.PEEK[])")
                 if status != "OK":
@@ -133,13 +178,16 @@ def poll_mailbox(session: Session):
                 raw = next((part[1] for part in parts if isinstance(part, tuple)), None)
                 if not isinstance(raw, bytes):
                     raise RuntimeError("Gmail returned an incomplete message.")
-                account_id = hashlib.sha256(account.encode()).hexdigest()[:16]
                 process_incoming(session, raw, f"{account_id}:{validity}:{uid}")
                 state.last_uid = uid
             state.last_success_at = now() if len(uids) <= 100 else None
             state.last_error = None
     except TimeoutError as exc:
+        state.last_error = "Connection timed out to imap.gmail.com:993"
+        session.flush()
         raise RuntimeError("Gmail inbox connection timed out. Check network/firewall access to imap.gmail.com:993.") from exc
     except (imaplib.IMAP4.error, OSError, UnicodeError) as exc:
+        state.last_error = f"Authentication/connection failed: {exc}"
+        session.flush()
         raise RuntimeError("Gmail inbox connection or authentication failed.") from exc
     return state.last_success_at is not None

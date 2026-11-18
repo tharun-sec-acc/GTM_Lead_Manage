@@ -1,3 +1,4 @@
+import gzip
 import hashlib
 import http.client
 import json
@@ -6,6 +7,7 @@ import re
 import socket
 import ssl
 import time
+import zlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -184,10 +186,15 @@ def _pinned_request(url: str, allowed_domain: str | None, max_bytes: int,
                 sock = socket.create_connection((address, port), timeout=remaining)
                 if parsed.scheme == "https":
                     sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
+                user_agent = (
+                    "Mozilla/5.0 (compatible; GTMProspectingResearch/1.0; admin@denso-prospecting.com)"
+                    if "sec.gov" in host
+                    else "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 (compatible; GTMProspectingResearch/1.0)"
+                )
                 request = (
-                    f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: GTMProspectingResearch/1.0\r\n"
-                    f"Accept: text/html,application/pdf,application/xhtml+xml;q=0.9,*/*;q=0.1\r\n"
-                    f"Accept-Encoding: identity\r\nConnection: close\r\n\r\n"
+                    f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: {user_agent}\r\n"
+                    f"Accept: text/html,application/pdf,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.1\r\n"
+                    f"Accept-Encoding: gzip, deflate\r\nConnection: close\r\n\r\n"
                 ).encode("ascii")
                 sock.sendall(request)
                 raw = http.client.HTTPResponse(sock)
@@ -202,9 +209,21 @@ def _pinned_request(url: str, allowed_domain: str | None, max_bytes: int,
                     response = None
                     break
                 if raw.status == 404 and allow_not_found:
-                    if headers.get("content-encoding", "identity").lower() not in ("", "identity"):
-                        raise SourceError("Website returned a compressed robots response.")
                     body = _read_body(raw, sock, max_bytes, deadline)
+                    enc = headers.get("content-encoding", "").lower().strip()
+                    if enc == "gzip":
+                        try:
+                            body = gzip.decompress(body)
+                        except Exception:
+                            pass
+                    elif enc in ("deflate", "zlib"):
+                        try:
+                            body = zlib.decompress(body)
+                        except Exception:
+                            try:
+                                body = zlib.decompress(body, -zlib.MAX_WBITS)
+                            except Exception:
+                                pass
                     if len(body) > max_bytes:
                         raise SourceError("Website robots policy exceeds the configured byte limit.")
                     raw.close()
@@ -212,14 +231,28 @@ def _pinned_request(url: str, allowed_domain: str | None, max_bytes: int,
                     break
                 if raw.status < 200 or raw.status >= 300:
                     raise SourceError(f"Company website returned HTTP {raw.status}.")
-                if headers.get("content-encoding", "identity").lower() not in ("", "identity"):
-                    raise SourceError("Compressed website responses are not accepted.")
                 content_length = headers.get("content-length")
-                if content_length and int(content_length) > max_bytes:
+                if content_length and int(content_length) > max_bytes * 4:
                     raise SourceError("Company website page exceeds the configured byte limit.")
-                body = _read_body(raw, sock, max_bytes, deadline)
+                body = _read_body(raw, sock, max_bytes * 4, deadline)
+                enc = headers.get("content-encoding", "").lower().strip()
+                if enc == "gzip":
+                    try:
+                        body = gzip.decompress(body)
+                    except Exception as exc:
+                        raise SourceError(f"Could not decompress gzip response: {exc}") from exc
+                elif enc in ("deflate", "zlib"):
+                    try:
+                        body = zlib.decompress(body)
+                    except Exception:
+                        try:
+                            body = zlib.decompress(body, -zlib.MAX_WBITS)
+                        except Exception as exc:
+                            raise SourceError(f"Could not decompress deflate response: {exc}") from exc
+                elif enc not in ("", "identity"):
+                    raise SourceError(f"Unsupported content-encoding: {enc}")
                 if len(body) > max_bytes:
-                    raise SourceError("Company website page exceeds the configured byte limit.")
+                    body = body[:max_bytes]
                 raw.close()
                 response = _Response(current, raw.status, headers, body)
                 break
@@ -269,15 +302,15 @@ def _parse_date(value: str | None) -> datetime | None:
 
 def _path_category(path: str) -> str:
     lowered = path.lower()
-    if any(item in lowered for item in ("news", "press", "media", "announcement", "blog")):
+    if any(item in lowered for item in ("leadership", "management", "team", "director", "board", "officer", "founder")):
+        return "leadership"
+    if any(item in lowered for item in ("news", "press", "media", "announcement", "blog", "events")):
         return "news"
-    if any(item in lowered for item in ("investor", "financial", "annual-report", "filing")):
+    if any(item in lowered for item in ("investor", "financial", "annual-report", "filing", "quarterly", "results", "balance")):
         return "financial"
     if any(item in lowered for item in ("funding", "investment", "acquisition", "merger")):
         return "funding"
-    if any(item in lowered for item in ("leadership", "management", "team", "director")):
-        return "leadership"
-    if any(item in lowered for item in ("career", "hiring", "expansion", "technology", "sustainability")):
+    if any(item in lowered for item in ("career", "hiring", "expansion", "technology", "sustainability", "fleet", "safety")):
         return "signals"
     return "company"
 
@@ -324,6 +357,9 @@ def _make_page(response: _Response, base_domain: str) -> Page | None:
     parser.feed(html)
     parser.close()
     text = re.sub(r"\s+", " ", " ".join(parser.text_parts)).strip()
+    desc = (parser.metadata.get("description") or parser.metadata.get("og:description") or "").strip()
+    if desc and desc not in text:
+        text = f"{desc}. {text}"
     if not text:
         return None
     title = re.sub(r"\s+", " ", " ".join(parser.title_parts)).strip() or parser.metadata.get("og:title", "")
@@ -388,9 +424,13 @@ def _json_page(response: _Response) -> Page | None:
 def _page_priority(url: str) -> tuple[int, str]:
     path = urlsplit(url).path.lower()
     priorities = (
-        ("about", 0), ("company", 1), ("product", 2), ("service", 3), ("leadership", 4),
-        ("team", 4), ("investor", 5), ("financial", 5), ("annual-report", 5), ("news", 6),
-        ("press", 6), ("career", 7), ("location", 8), ("contact", 9),
+        ("about", 0), ("overview", 0), ("who-we-are", 0), ("corporate", 0),
+        ("leadership", 1), ("management", 1), ("board", 1), ("team", 1), ("director", 1), ("executive", 1), ("governance", 1),
+        ("investor", 2), ("financial", 2), ("annual-report", 2), ("result", 2), ("filing", 2), ("shareholder", 2),
+        ("product", 3), ("service", 3), ("solution", 3), ("operation", 3),
+        ("fleet", 4), ("network", 4), ("infrastructure", 4), ("warehouse", 4), ("transport", 4), ("logistics", 4),
+        ("news", 5), ("press", 5), ("media", 5), ("announcement", 5), ("release", 5),
+        ("technology", 6), ("sustainability", 6), ("esg", 6), ("career", 7), ("contact", 8),
     )
     return (next((priority for token, priority in priorities if token in path), 10), url)
 
@@ -400,22 +440,40 @@ def gather_official_pages(domain: str, max_pages: int, max_depth: int,
     from app.company_intelligence.sources.browser import BrowserRenderer
 
     scheme = "https"
-    start = f"{scheme}://{domain}/"
-    robots_url = f"{scheme}://{domain}/robots.txt"
+    hosts_to_try = [domain] if domain.startswith("www.") else [domain, f"www.{domain}"]
+    robots = None
+    active_domain = domain
+    last_exc = None
+    parser = None
     limitations: list[str] = []
     deadline = time.monotonic() + max(1, min(600, settings.research_max_duration_seconds))
-    parser = RobotFileParser(robots_url)
-    try:
-        robots = _pinned_request(
-            robots_url, domain, max(1, min(settings.research_max_content_size, 65536)),
-            allow_not_found=True,
-            deadline=deadline,
-        )
-        parser.parse([] if robots.status == 404 else robots.body.decode("utf-8", errors="replace").splitlines())
-    except SourceError as exc:
+
+    for candidate_host in hosts_to_try:
+        robots_url = f"{scheme}://{candidate_host}/robots.txt"
+        candidate_parser = RobotFileParser(robots_url)
+        try:
+            candidate_robots = _pinned_request(
+                robots_url, candidate_host, max(1, min(settings.research_max_content_size, 65536)),
+                allow_not_found=True,
+                deadline=deadline,
+            )
+            candidate_parser.parse([] if candidate_robots.status == 404 else candidate_robots.body.decode("utf-8", errors="replace").splitlines())
+            robots = candidate_robots
+            parser = candidate_parser
+            active_domain = candidate_host
+            last_exc = None
+            break
+        except SourceError as exc:
+            last_exc = exc
+            continue
+
+    if robots is None or parser is None:
+        parser = RobotFileParser(f"{scheme}://{domain}/robots.txt")
         parser.parse(["User-agent: *", "Disallow: /"])
-        limitations.append(f"Website crawling stopped because robots.txt could not be checked: {exc}")
+        limitations.append(f"Website crawling stopped because robots.txt could not be checked: {last_exc}")
         return [], limitations, min(settings.research_max_content_size, 65536, max_total_bytes)
+
+    start = f"{scheme}://{active_domain}/"
     if not parser.can_fetch("GTMProspectingResearch", start):
         return [], ["Company website robots policy disallows automated research."], 0
     crawl_delay = parser.crawl_delay("GTMProspectingResearch") or 0
@@ -430,7 +488,7 @@ def gather_official_pages(domain: str, max_pages: int, max_depth: int,
     visited: set[str] = set()
     queue: list[tuple[str, int]] = [(start, 0)]
     total_bytes = len(robots.body)
-    with BrowserRenderer(domain, deadline, lambda target: parser.can_fetch("GTMProspectingResearch", target),
+    with BrowserRenderer(active_domain, deadline, lambda target: parser.can_fetch("GTMProspectingResearch", target),
                          crawl_delay, cancelled) as browser:
         while queue and len(pages) < max_pages:
             if (cancelled and cancelled()) or time.monotonic() >= deadline or len(visited) >= max_pages * 2:
@@ -502,20 +560,27 @@ def robots_for(host: str, deadline: float | None = None) -> tuple[RobotFileParse
     if host in _ROBOTS_CACHE:
         parser, notes = _ROBOTS_CACHE[host]
         return parser, list(notes), 0
+    hosts_to_try = [host] if host.startswith("www.") else [host, f"www.{host}"]
+    last_exc = None
+    for candidate_host in hosts_to_try:
+        candidate_parser = RobotFileParser(f"https://{candidate_host}/robots.txt")
+        notes: list[str] = []
+        try:
+            response = _pinned_request(f"https://{candidate_host}/robots.txt", candidate_host, 65536,
+                                       allow_not_found=True, deadline=deadline)
+            consumed = len(response.body)
+            candidate_parser.parse([] if response.status == 404
+                                   else response.body.decode("utf-8", errors="replace").splitlines())
+            _ROBOTS_CACHE[host] = (candidate_parser, list(notes))
+            return candidate_parser, notes, consumed
+        except SourceError as exc:
+            last_exc = exc
+            continue
     parser = RobotFileParser(f"https://{host}/robots.txt")
-    notes: list[str] = []
-    consumed = 0
-    try:
-        response = _pinned_request(f"https://{host}/robots.txt", host, 65536,
-                                   allow_not_found=True, deadline=deadline)
-        consumed = len(response.body)
-        parser.parse([] if response.status == 404
-                     else response.body.decode("utf-8", errors="replace").splitlines())
-    except SourceError as exc:
-        parser.parse(["User-agent: *", "Disallow: /"])
-        notes.append(f"{host}: robots policy could not be checked ({exc}); domain skipped.")
+    parser.parse(["User-agent: *", "Disallow: /"])
+    notes = [f"{host}: robots policy could not be checked ({last_exc}); domain skipped."]
     _ROBOTS_CACHE[host] = (parser, list(notes))
-    return parser, notes, consumed
+    return parser, notes, 0
 
 
 def crawl_delay_for(parser: RobotFileParser) -> float:

@@ -28,6 +28,10 @@ services:
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - attachments_data:/app/attachments
     depends_on:
       db:
         condition: service_healthy
@@ -37,6 +41,10 @@ services:
     build: ./backend
     env_file: .env
     command: celery -A app.tasks:celery_app worker --loglevel=INFO
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/migrations:/app/migrations
+      - attachments_data:/app/attachments
     depends_on:
       api:
         condition: service_started
@@ -44,6 +52,8 @@ services:
     build: ./backend
     env_file: .env
     command: celery -A app.tasks:celery_app beat --loglevel=INFO --schedule=/tmp/celerybeat-schedule
+    volumes:
+      - ./backend/app:/app/app
     depends_on:
       api:
         condition: service_started
@@ -56,3 +66,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  attachments_data:

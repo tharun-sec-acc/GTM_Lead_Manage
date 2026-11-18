@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useState } from "react";
+import UnifiedMeetingsView from "../../components/unified-meetings-view";
 
 const API = "http://localhost:8000";
-type Status = { connected: boolean; organizer_email: string | null; scopes: string[] };
+
 type Availability = {
   timezone: string;
   duration_minutes: number;
@@ -24,78 +26,129 @@ function localInput(date: Date) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
-export default function Meetings() {
-  const [status, setStatus] = useState<Status | null>(null);
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [availability, setAvailability] = useState<Availability | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
+export default function MeetingsPage() {
+  const [showAvailabilityTool, setShowAvailabilityTool] = useState(false);
+  const [start, setStart] = useState(() => {
     const first = new Date(Date.now() + 5 * 60000);
-    setStart(localInput(first));
-    setEnd(localInput(new Date(first.getTime() + 24 * 60 * 60000)));
-    request<Status>("/microsoft/oauth/status").then(setStatus).catch(reason =>
-      setError(reason instanceof Error ? reason.message : "Could not load Microsoft status."));
-  }, []);
-
-  async function disconnect() {
-    if (!window.confirm("Remove the locally stored Microsoft organizer connection?")) return;
-    setBusy(true); setError("");
-    try {
-      await request("/microsoft/oauth/disconnect", { method: "POST" });
-      setStatus({ connected: false, organizer_email: null, scopes: [] });
-      setAvailability(null);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not remove the local connection.");
-    } finally { setBusy(false); }
-  }
+    return localInput(first);
+  });
+  const [end, setEnd] = useState(() => {
+    const first = new Date(Date.now() + 5 * 60000);
+    return localInput(new Date(first.getTime() + 24 * 60 * 60000));
+  });
+  const [availability, setAvailability] = useState<Availability | null>(null);
+  const [availError, setAvailError] = useState("");
+  const [availBusy, setAvailBusy] = useState(false);
 
   async function checkAvailability() {
-    setBusy(true); setError(""); setAvailability(null);
+    setAvailBusy(true);
+    setAvailError("");
+    setAvailability(null);
     try {
       const from = new Date(start);
       const to = new Date(end);
       if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
         throw new Error("Enter valid start and end times.");
       }
-      setAvailability(await request<Availability>("/microsoft/availability", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ start: from.toISOString(), end: to.toISOString() }),
-      }));
+      setAvailability(
+        await request<Availability>("/microsoft/availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ start: from.toISOString(), end: to.toISOString() }),
+        })
+      );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not retrieve Microsoft availability.");
-    } finally { setBusy(false); }
+      setAvailError(reason instanceof Error ? reason.message : "Could not retrieve Microsoft availability.");
+    } finally {
+      setAvailBusy(false);
+    }
   }
 
-  return <main>
-    <header><div><p className="eyebrow">DENSO / SALES PILOT</p><h1>Outlook calendar availability</h1>
-      <p>Local testing only. This screen does not book meetings or send invitations.</p></div>
-      <a href="/">← Lead workspace</a></header>
-    <div className="alert">This pilot has no app login. Do not expose it or use production customer data.</div>
-    {error && <div role="alert" className="alert">{error}</div>}
-    <section>
-      <h2>Organizer connection</h2>
-      {status === null ? <p>Loading connection status…</p> : status.connected ?
-        <><p>Connected: {status.organizer_email}</p>
-          <p>Availability uses delegated, read-only calendar access. Disconnect removes local tokens; it does not revoke tenant consent.</p>
-          <button disabled={busy} onClick={disconnect}>Remove local connection</button></> :
-        <><p>No organizer connected.</p><a href={`${API}/microsoft/oauth/start`}>Connect Microsoft organizer</a></>}
-    </section>
-    {status?.connected && <section>
-      <h2>Check availability</h2>
-      <p>Enter a future range using your computer&apos;s timezone. Results show the configured organizer timezone.</p>
-      <label>From<input type="datetime-local" value={start} onChange={event => setStart(event.target.value)} /></label>
-      <label>To<input type="datetime-local" value={end} onChange={event => setEnd(event.target.value)} /></label>
-      <button disabled={busy || !start || !end} onClick={checkAvailability}>Check Outlook calendar</button>
-      {availability && <div>
-        <p>Timezone: {availability.timezone} · Duration: {availability.duration_minutes} minutes</p>
-        {availability.slots.length === 0 ? <p>No available slots in this range.</p> :
-          <ul>{availability.slots.map(slot => <li key={slot.start}>{slot.start} – {slot.end}</li>)}</ul>}
-        <p>Availability may change; a future booking implementation must recheck it.</p>
-      </div>}
-    </section>}
-  </main>;
+  return (
+    <main>
+      <header style={{ marginBottom: 20 }}>
+        <div>
+          <p className="eyebrow">DENSO GTM / VIDEO INTELLIGENCE</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Link href="/" style={{ fontSize: 13, color: "var(--muted)" }}>
+              ← Return to Dashboard
+            </Link>
+          </div>
+        </div>
+        <div className="actions">
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setShowAvailabilityTool(!showAvailabilityTool)}
+            style={{ fontSize: 13 }}
+          >
+            {showAvailabilityTool ? "Hide Calendar Free/Busy Tool" : "🔍 Check Outlook Free/Busy"}
+          </button>
+        </div>
+      </header>
+
+      {/* Preserved Calendar Free/Busy Inspector */}
+      {showAvailabilityTool && (
+        <section style={{ marginBottom: 24, border: "1px solid var(--border)", background: "#fff", borderRadius: 10, padding: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 style={{ margin: 0 }}>Outlook Free/Busy Availability Inspector</h3>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>Delegated Read-Only</span>
+          </div>
+          <p style={{ fontSize: 13, color: "var(--muted)", margin: "4px 0 16px" }}>
+            Lookup organizer free/busy calendar windows from Microsoft Graph without modifying schedules.
+          </p>
+          {availError && <div role="alert" className="alert" style={{ marginBottom: 12 }}>{availError}</div>}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <label style={{ fontSize: 12, fontWeight: 600 }}>
+              From
+              <input
+                type="datetime-local"
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                style={{ display: "block", marginTop: 4, padding: "6px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+              />
+            </label>
+            <label style={{ fontSize: 12, fontWeight: 600 }}>
+              To
+              <input
+                type="datetime-local"
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+                style={{ display: "block", marginTop: 4, padding: "6px 10px", borderRadius: 6, border: "1px solid var(--border)" }}
+              />
+            </label>
+            <button
+              disabled={availBusy || !start || !end}
+              onClick={checkAvailability}
+              style={{ padding: "8px 16px", fontSize: 13 }}
+            >
+              {availBusy ? "Checking…" : "Query Graph Schedule"}
+            </button>
+          </div>
+
+          {availability && (
+            <div style={{ marginTop: 16, background: "#f8fafc", padding: 14, borderRadius: 8, border: "1px solid #e2e8f0" }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>
+                Timezone: {availability.timezone} · Slot Duration: {availability.duration_minutes}m
+              </p>
+              {availability.slots.length === 0 ? (
+                <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--muted)" }}>No free slots found in this window.</p>
+              ) : (
+                <ul style={{ margin: "8px 0 0 16px", padding: 0, fontSize: 12 }}>
+                  {availability.slots.map((s) => (
+                    <li key={s.start}>
+                      {new Date(s.start).toLocaleString()} – {new Date(s.end).toLocaleTimeString()}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Unified Meeting Management Component */}
+      <UnifiedMeetingsView />
+    </main>
+  );
 }

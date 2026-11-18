@@ -15,8 +15,8 @@ from app import apollo
 from app.database import get_db
 from app.imports import MAX_FILE_BYTES, validate_mapping, workbook_active_sheet_name, workbook_sheets
 from app.models import (
-    ApolloSearchResult, Batch, Campaign, Contact, EmailEvent, EmailMessage, EmailReply,
-    Enrollment, ImportRow, Lead, Product, SalesTask, now,
+    ApolloSearchResult, Batch, Campaign, Contact, EmailAttachment, EmailEvent, EmailMessage, EmailReply,
+    Enrollment, ImportRow, Lead, Product, ProductLead, SalesTask, now,
 )
 from app.followup_api import router as followup_router
 from app.public_tracking import router as public_router
@@ -27,6 +27,8 @@ from app.products import router as products_router
 from app.email_templates import router as templates_router
 from app.attachments import router as attachments_router
 from app.product_research import router as product_research_router
+from app.meetings import router as meetings_router
+from app.meetings.service import meeting_service
 
 app = FastAPI(title="DENSO Prospecting Pilot")
 app.include_router(followup_router)
@@ -38,6 +40,7 @@ app.include_router(products_router)
 app.include_router(templates_router)
 app.include_router(attachments_router)
 app.include_router(product_research_router)
+app.include_router(meetings_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -329,6 +332,18 @@ def lead_profile(lead_id: str, limit: int = Query(default=200, ge=1, le=500),
     events_by_email: dict[str, list[EmailEvent]] = {}
     for event in events:
         events_by_email.setdefault(event.email_id, []).append(event)
+    attachments = session.scalars(select(EmailAttachment).where(
+        EmailAttachment.message_id.in_(message_ids),
+        EmailAttachment.upload_status == "complete",
+    )).all() if message_ids else []
+    attachments_by_message: dict[str, list[dict]] = {}
+    for att in attachments:
+        attachments_by_message.setdefault(att.message_id, []).append({
+            "id": att.id,
+            "filename": att.filename_safe,
+            "size_bytes": att.size_bytes,
+            "content_type": att.content_type,
+        })
     replies = session.scalars(select(EmailReply).where(
         EmailReply.enrollment_id.in_(enrollment_by_id)
     ).order_by(EmailReply.received_at.desc()).limit(limit)).all() if enrollments else []
@@ -372,6 +387,7 @@ def lead_profile(lead_id: str, limit: int = Query(default=200, ge=1, le=500),
             "status": message.status, "created_at": message.created_at, "approved_at": message.approved_at,
             "due_at": message.due_at, "sent_at": message.sent_at,
             "delivery_confirmed": False,
+            "attachments": attachments_by_message.get(message.id, []),
             "events": [{"type": event.event_type, "occurred_at": event.event_time,
                         "detail": event.detail} for event in events_for_message],
         })
@@ -395,13 +411,25 @@ def lead_profile(lead_id: str, limit: int = Query(default=200, ge=1, le=500),
     for task in tasks:
         add_activity("sales_task_created", task.created_at, task.id, task.title, {"status": task.status})
         add_activity("sales_task_completed", task.completed_at, task.id, task.title, {"status": task.status})
+    lead_meetings = meeting_service.list_meetings(session, lead_id=lead.id)
+    for m in lead_meetings:
+        add_activity(
+            f"{m['provider']}_meeting",
+            m.get("scheduled_start") or m.get("created_at"),
+            m["id"],
+            f"Meeting ({m['provider'].upper()}): {m['title']}",
+            {"status": m["status"], "join_url": m["join_url"], "type": m["meeting_type"]},
+        )
     timeline.sort(key=lambda item: utc_timestamp(item["occurred_at"]), reverse=True)
     return {
         "lead": lead_response(lead),
         "overview": {
             "contact_count": contact_count,
-            "email_count": len(messages), "reply_count": len(replies), "meeting_count": 0,
-            "lifecycle_stage": None, "owner": None,
+            "email_count": len(messages),
+            "reply_count": len(replies),
+            "meeting_count": len(lead_meetings),
+            "lifecycle_stage": (getattr(lead, "stage", None) or (lead.extra or {}).get("stage") or "Lead"),
+            "owner": None,
         },
         "contacts": [contact_response(contact) for contact in contacts if contact.is_active],
         "removed_contacts": [contact_response(contact) for contact in contacts if not contact.is_active],
@@ -419,7 +447,7 @@ def lead_profile(lead_id: str, limit: int = Query(default=200, ge=1, le=500),
         "campaigns": [{
             "id": campaign.id, "name": campaign.name, "status": campaign.status,
         } for campaign in campaigns],
-        "meetings": {"implemented": False, "items": []},
+        "meetings": {"implemented": True, "items": lead_meetings},
         "company_research": {"implemented": False, "items": []},
         "commercial_lifecycle": {"implemented": False, "items": []},
         "timeline": timeline[:limit],
@@ -468,8 +496,17 @@ def search_contacts(lead_id: str, session: Session = Depends(get_db)):
         organization = person.get("organization")
         organization = organization if isinstance(organization, dict) else {}
         organization_domain = normalized_domain(
-            organization.get("primary_domain") or organization.get("domain") or organization.get("website_url")
+            organization.get("primary_domain")
+            or organization.get("domain")
+            or organization.get("website_url")
+            or organization.get("raw_domain")
+            or person.get("organization_domain")
         )
+        if not organization_domain:
+            org_name = (organization.get("name") or "").lower().strip()
+            lead_name = (lead.company_name or "").lower().strip()
+            if org_name and lead_name and (org_name in lead_name or lead_name in org_name):
+                organization_domain = lead.domain
         retrieved = session.scalar(select(ApolloSearchResult).where(
             ApolloSearchResult.lead_id == lead.id, ApolloSearchResult.apollo_id == person["id"]
         ))
@@ -526,7 +563,7 @@ def enrich_contact(lead_id: str, request: EnrichRequest, session: Session = Depe
     existing = session.scalar(select(Contact).where(
         Contact.lead_id == lead_id, Contact.apollo_id == request.apollo_id
     ))
-    if existing:
+    if existing and existing.is_active and existing.email:
         raise HTTPException(409, "This contact has already been enriched.")
     candidate = session.scalar(select(ApolloSearchResult).where(
         ApolloSearchResult.lead_id == lead_id, ApolloSearchResult.apollo_id == request.apollo_id
@@ -544,31 +581,87 @@ def enrich_contact(lead_id: str, request: EnrichRequest, session: Session = Depe
     organization = person.get("organization")
     organization = organization if isinstance(organization, dict) else {}
     enriched_domain = normalized_domain(
-        organization.get("primary_domain") or organization.get("domain") or organization.get("website_url")
+        organization.get("primary_domain")
+        or organization.get("domain")
+        or organization.get("website_url")
+        or organization.get("raw_domain")
     )
-    verified_domain = enriched_domain or candidate.organization_domain
-    organization_matches = domain_matches(verified_domain, lead.domain)
+    org_name = (organization.get("name") or "").lower().strip()
+    lead_name = (lead.company_name or "").lower().strip()
+    name_matches = bool(org_name and lead_name and (org_name in lead_name or lead_name in org_name))
+    candidate_matches = domain_matches(candidate.organization_domain, lead.domain)
+    enriched_matches = domain_matches(enriched_domain, lead.domain)
+    organization_matches = candidate_matches or enriched_matches or name_matches
     if not organization_matches and not request.organization_confirmed:
         raise HTTPException(409, "Confirm that this person currently belongs to the selected company before saving.")
-    raw_email = person.get("email")
-    email = validate_contact_email(raw_email) if isinstance(raw_email, str) else None
-    if email and not domain_matches(email.rsplit("@", 1)[-1], lead.domain):
-        email = None
-    departments = person.get("departments")
-    contact = Contact(
-        lead_id=lead_id, apollo_id=request.apollo_id,
-        name=person.get("name") or candidate.name, title=person.get("title") or candidate.title,
-        email=email, department=", ".join(departments) if isinstance(departments, list)
-        and all(isinstance(value, str) for value in departments) else candidate.department,
-        seniority=person.get("seniority") or candidate.seniority,
-        linkedin_url=person.get("linkedin_url") or candidate.linkedin_url,
-        location=person.get("city") or person.get("location"),
-        source="Apollo", verification_status="organization_verified" if organization_matches else "manually_verified",
-        retrieved_at=now(), updated_at=now(),
+    raw_email = (
+        person.get("email")
+        or person.get("corporate_email")
+        or (person.get("personal_emails")[0] if isinstance(person.get("personal_emails"), list) and person.get("personal_emails") else None)
+        or person.get("sanitized_email")
     )
-    session.add(contact)
+    email = validate_contact_email(raw_email) if isinstance(raw_email, str) else None
+    if email:
+        email_domain = email.rsplit("@", 1)[-1].lower()
+        if not organization_matches:
+            # Person was found at a different organization. Only retain email if it is on the target lead's domain.
+            if not domain_matches(email_domain, lead.domain):
+                email = None
+    departments = person.get("departments")
+    dept_str = (
+        ", ".join(departments)
+        if isinstance(departments, list) and all(isinstance(value, str) for value in departments)
+        else candidate.department
+    )
+    if existing is None:
+        contact = Contact(lead_id=lead_id, apollo_id=request.apollo_id)
+        session.add(contact)
+    else:
+        contact = existing
+        contact.is_active = True
+
+    contact.name = person.get("name") or candidate.name
+    contact.title = person.get("title") or candidate.title
+    contact.email = email
+    contact.department = dept_str
+    contact.seniority = person.get("seniority") or candidate.seniority
+    contact.linkedin_url = person.get("linkedin_url") or candidate.linkedin_url
+    contact.location = person.get("city") or person.get("location")
+    contact.source = "Apollo"
+    contact.verification_status = "organization_verified" if organization_matches else "manually_verified"
+    contact.updated_at = now()
+    if not contact.retrieved_at:
+        contact.retrieved_at = now()
     session.commit()
     return contact_response(contact)
+
+
+@app.get("/contacts")
+def list_contacts(
+    lead_id: str | None = None,
+    product_id: str | None = None,
+    limit: int = Query(default=500, ge=1, le=1000),
+    session: Session = Depends(get_db)
+):
+    query = (
+        select(Contact, Lead.company_name, Lead.email.label("lead_email"))
+        .join(Lead, Contact.lead_id == Lead.id)
+        .where(Contact.is_active.is_(True))
+    )
+    if lead_id:
+        query = query.where(Contact.lead_id == lead_id)
+    elif product_id:
+        product_lead_ids = select(ProductLead.lead_id).where(ProductLead.product_id == product_id)
+        query = query.where(Contact.lead_id.in_(product_lead_ids))
+    rows = session.execute(query.order_by(Lead.company_name, Contact.name).limit(limit)).all()
+    results = []
+    for contact, company_name, lead_email in rows:
+        data = contact_response(contact)
+        data["company_name"] = company_name
+        data["lead_email"] = lead_email
+        data["lead_id"] = contact.lead_id
+        results.append(data)
+    return results
 
 
 @app.get("/leads/{lead_id}/contacts")

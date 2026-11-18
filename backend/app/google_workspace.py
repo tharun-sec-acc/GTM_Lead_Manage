@@ -1,7 +1,14 @@
 import hashlib
 import hmac
+import logging
+import os
 import secrets
 from datetime import datetime, timedelta
+
+# Relax oauthlib token scope validation to allow Google's dynamic scope responses
+os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+
+logger = logging.getLogger(__name__)
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
@@ -30,6 +37,15 @@ SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.email",
 CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.freebusy"
 EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events.owned"
 BOOKING_SCOPES = [*SCOPES, EVENTS_SCOPE]
+MEET_SPACE_SCOPE = "https://www.googleapis.com/auth/meetings.space.created"
+DRIVE_READONLY_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+CALENDAR_EVENTS_FULL_SCOPE = "https://www.googleapis.com/auth/calendar.events"
+MEETING_FULL_SCOPES = [
+    *BOOKING_SCOPES,
+    CALENDAR_EVENTS_FULL_SCOPE,
+    MEET_SPACE_SCOPE,
+    DRIVE_READONLY_SCOPE,
+]
 COOKIE = "google_oauth_browser"
 
 
@@ -52,7 +68,8 @@ def validate_config():
     cipher()
 
 
-def oauth_flow(state: str, verifier: str, booking: bool = False):
+def oauth_flow(state: str, verifier: str, booking: bool = False, meet: bool = True):
+    scopes = MEETING_FULL_SCOPES if meet else (BOOKING_SCOPES if booking else SCOPES)
     return Flow.from_client_config({
         "web": {
             "client_id": settings.google_client_id,
@@ -61,7 +78,7 @@ def oauth_flow(state: str, verifier: str, booking: bool = False):
             "token_uri": "https://oauth2.googleapis.com/token",
             "redirect_uris": [settings.google_redirect_uri],
         }
-    }, scopes=BOOKING_SCOPES if booking else SCOPES, state=state, redirect_uri=settings.google_redirect_uri,
+    }, scopes=scopes, state=state, redirect_uri=settings.google_redirect_uri,
        code_verifier=verifier, autogenerate_code_verifier=False)
 
 
@@ -70,12 +87,12 @@ def connection_error(exc: Exception):
 
 
 @router.get("/oauth/start")
-def start_oauth(booking: bool = False, session: Session = Depends(get_db)):
+def start_oauth(booking: bool = False, meet: bool = True, session: Session = Depends(get_db)):
     try:
         validate_config()
         state, browser, verifier = (secrets.token_urlsafe(32), secrets.token_urlsafe(32),
                                     secrets.token_urlsafe(64))
-        flow = oauth_flow(state, verifier, booking)
+        flow = oauth_flow(state, verifier, booking=booking, meet=meet)
         url, _ = flow.authorization_url(access_type="offline", prompt="consent")
         record = GoogleOAuthState(state_hash=digest(state), browser_hash=digest(browser),
                                   verifier_encrypted=cipher().encrypt(verifier.encode()),
@@ -95,6 +112,16 @@ def start_oauth(booking: bool = False, session: Session = Depends(get_db)):
 def oauth_callback(request: Request, session: Session = Depends(get_db)):
     state = request.query_params.get("state", "")
     browser = request.cookies.get(COOKIE, "")
+
+    # Check for Google error response first
+    error = request.query_params.get("error")
+    error_desc = request.query_params.get("error_description") or error
+    if error:
+        logger.warning("Google OAuth authorization error received: %s (%s)", error, error_desc)
+        if error == "access_denied":
+            raise HTTPException(400, "Google authorization was denied by the user.")
+        raise HTTPException(400, f"Google authorization failed: {error_desc}")
+
     if not state or not browser:
         raise HTTPException(400, "OAuth state or browser cookie is missing.")
     record = session.scalar(select(GoogleOAuthState).where(
@@ -111,26 +138,44 @@ def oauth_callback(request: Request, session: Session = Depends(get_db)):
     record.consumed_at = now()
     session.commit()
     code = request.query_params.get("code")
-    if request.query_params.get("error") or not code:
-        raise HTTPException(400, "Google authorization was denied or no code was returned.")
+    if not code:
+        raise HTTPException(400, "Google authorization code is missing.")
     try:
         flow = oauth_flow(state, verifier, record.booking_requested)
         flow.fetch_token(code=code)
         credentials = flow.credentials
-        if not credentials.refresh_token or not credentials.id_token:
-            raise RuntimeError("Google did not provide an offline refresh token and identity.")
-        granted_scopes = credentials.granted_scopes or []
+        stored = session.get(GoogleOAuthCredential, "organizer")
+
+        # Handle refresh token: Google may omit refresh_token on re-consent if prompt!='consent'
+        refresh_token = credentials.refresh_token
+        if not refresh_token:
+            if stored and stored.refresh_token_encrypted:
+                refresh_token = cipher().decrypt(stored.refresh_token_encrypted).decode("ascii")
+            else:
+                raise RuntimeError("Google did not provide an offline refresh token and identity.")
+
+        if not credentials.id_token:
+            raise RuntimeError("Google did not provide an identity token.")
+
+        granted_scopes = credentials.granted_scopes or credentials.scopes or []
         if CALENDAR_SCOPE not in granted_scopes:
             raise RuntimeError("Google Calendar availability access was not granted.")
         if record.booking_requested and EVENTS_SCOPE not in granted_scopes:
             raise RuntimeError("Google Calendar event access was not granted.")
+
         identity = id_token.verify_oauth2_token(credentials.id_token, GoogleRequest(), settings.google_client_id)
         email = str(identity.get("email", "")).lower()
-        if identity.get("email_verified") is not True or email != settings.google_workspace_organizer_email.strip().lower():
-            raise RuntimeError("The authorized Google account is not the configured organizer.")
-        encrypted = cipher().encrypt(credentials.refresh_token.encode())
-    except (GoogleAuthError, RequestException, OAuth2Error, ValueError, RuntimeError) as exc:
-        raise HTTPException(502, "Google authorization failed or did not match the configured organizer.") from exc
+        configured_organizer = settings.google_workspace_organizer_email.strip().lower()
+        if identity.get("email_verified") is not True or email != configured_organizer:
+            raise RuntimeError(f"The authorized Google account ({email}) is not the configured organizer ({configured_organizer}).")
+
+        encrypted = cipher().encrypt(refresh_token.encode())
+    except (GoogleAuthError, RequestException, OAuth2Error, ValueError, RuntimeError, Warning) as exc:
+        logger.warning("Google authorization failed: %s", exc)
+        raise HTTPException(502, f"Google authorization failed: {str(exc)}") from exc
+    except Exception as exc:
+        logger.exception("Unexpected error in Google OAuth callback: %s", exc)
+        raise HTTPException(502, "Google authorization failed due to an unexpected error.") from exc
     stored = session.get(GoogleOAuthCredential, "organizer")
     if stored is None:
         stored = GoogleOAuthCredential(id="organizer", organizer_email=email,
@@ -153,14 +198,14 @@ def oauth_status(session: Session = Depends(get_db)):
             "booking_access": bool(credential and EVENTS_SCOPE in credential.scopes)}
 
 
-def google_access_token(session: Session, required_scope: str = CALENDAR_SCOPE):
+def google_access_token(session: Session, required_scope: str | None = None):
     validate_config()
     credential = session.get(GoogleOAuthCredential, "organizer")
     if not credential:
         raise RuntimeError("Connect the Google organizer account first.")
     if credential.organizer_email != settings.google_workspace_organizer_email.strip().lower():
         raise RuntimeError("Connected Google organizer does not match configuration; reconnect.")
-    if required_scope not in credential.scopes:
+    if required_scope and required_scope not in credential.scopes:
         raise RuntimeError("Required Google Calendar permission is missing; reconnect the organizer.")
     try:
         refresh_token = cipher().decrypt(credential.refresh_token_encrypted).decode()

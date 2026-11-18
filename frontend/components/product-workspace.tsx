@@ -1,9 +1,10 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { fetchProducts, type Product } from "../lib/products";
+import UiIcon from "./ui-icon";
 
 const ProductContext = createContext<Product | null>(null);
 
@@ -24,7 +25,6 @@ const sections: { id: ProductSection; label: string }[] = [
   { id: "import", label: "Import" },
   { id: "research", label: "Research" },
   { id: "contacts", label: "Contacts" },
-  { id: "campaigns", label: "Campaigns" },
   { id: "templates", label: "Templates" },
   { id: "meetings", label: "Meetings" },
   { id: "analytics", label: "Analytics" },
@@ -54,7 +54,7 @@ export default function ProductWorkspace({ slug, section, children }: Props) {
     fetchProducts("active")
       .then((products) => {
         if (controller.signal.aborted) return;
-        const found = products.find((p) => p.slug === slug);
+        const found = products.find((p) => p.slug === slug || (slug === "vehicle-digital-inspection" && p.slug === "vdi"));
         if (found) {
           setProduct(found);
         } else {
@@ -104,19 +104,21 @@ export default function ProductWorkspace({ slug, section, children }: Props) {
         <span>{sections.find((s) => s.id === section)?.label ?? section}</span>
       </nav>
 
-      {/* Product sub-navigation */}
-      <nav className="product-subnav" aria-label="Product workspace navigation">
-        {sections.map((s) => (
-          <Link
-            key={s.id}
-            href={s.id === "overview" ? basePath : `${basePath}/${s.id}`}
-            className={`product-subnav-item${section === s.id ? " active" : ""}`}
-            aria-current={section === s.id ? "page" : undefined}
-          >
-            {s.label}
-          </Link>
-        ))}
-      </nav>
+      {/* Product sub-navigation with Bulk Outreach trigger */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", margin: "16px 0" }}>
+        <nav className="product-subnav" aria-label="Product workspace navigation" style={{ margin: 0 }}>
+          {sections.map((s) => (
+            <Link
+              key={s.id}
+              href={s.id === "overview" ? basePath : `${basePath}/${s.id}`}
+              className={`product-subnav-item${section === s.id ? " active" : ""}`}
+              aria-current={section === s.id ? "page" : undefined}
+            >
+              {s.label}
+            </Link>
+          ))}
+        </nav>
+      </div>
 
       {/* Content */}
       <div className="product-workspace-content">

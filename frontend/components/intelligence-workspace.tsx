@@ -37,6 +37,7 @@ export default function IntelligenceWorkspace({ lead, initialJobId }: { lead?: L
   const [profileNext, setProfileNext] = useState<string | null>(null);
   const [profileError, setProfileError] = useState("");
   const [profilesLoading, setProfilesLoading] = useState(false);
+  const [forceRefresh, setForceRefresh] = useState(false);
   const [showForm, setShowForm] = useState(!initialJobId);
   const [facts, setFacts] = useState<ResearchFact[]>([]);
   const [sources, setSources] = useState<ResearchSource[]>([]);
@@ -125,12 +126,13 @@ export default function IntelligenceWorkspace({ lead, initialJobId }: { lead?: L
     finally { setProfilesLoading(false); }
   }
 
-  async function startResearch(forceRefresh = false) {
+  async function startResearch(overrideForceRefresh?: boolean) {
+    const shouldForce = overrideForceRefresh !== undefined ? overrideForceRefresh : forceRefresh;
     setBusy(true); setError(""); setNotice("");
     try {
       const result = await request<{ job_id: string; company_id: string; reused: boolean }>("/intelligence/research", "POST", {
         company_name: company, website, country: country || null, registration_id: registrationId || null,
-        lead_id: lead?.id || null, depth, inference_profile_id: profileId || null, force_refresh: forceRefresh,
+        lead_id: lead?.id || null, depth, inference_profile_id: profileId || null, force_refresh: shouldForce,
       });
       setSelectedId(result.job_id); setPollVersion(value => value + 1); setShowForm(false);
       setNotice(result.reused ? "Reopened existing research. No duplicate job was created." : "Research queued. Progress below comes from persisted worker activity.");
@@ -174,7 +176,7 @@ export default function IntelligenceWorkspace({ lead, initialJobId }: { lead?: L
         <p>{lead ? "Research this company without leaving its profile. Existing contacts and approvals stay unchanged."
           : "From scattered sources to a clear, cited company profile. Research first. Reach out with confidence."}</p></div>
       <div className="actions"><button className="secondary" disabled={busy} onClick={() => {
-        setShowForm(true); setConsent(false);
+        setShowForm(true); setConsent(false); setForceRefresh(false);
       }}><UiIcon name="spark" size={16} /> New research</button>
         <button className="icon-button secondary" aria-label="Refresh research history" disabled={busy} onClick={() => {
           setError(""); void loadWorkspace().catch(reason => setError(reason instanceof Error ? reason.message : "Could not refresh history."));
@@ -209,6 +211,8 @@ export default function IntelligenceWorkspace({ lead, initialJobId }: { lead?: L
           </div>
           <label className="consent-option"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />
             <span>I confirm this public-company research and its processing through the selected AWS model are approved. Research may incur provider charges.</span></label>
+          <label className="consent-option"><input type="checkbox" checked={forceRefresh} onChange={event => setForceRefresh(event.target.checked)} />
+            <span>Force fresh crawl &amp; extraction (bypass 24-hour cache)</span></label>
           <div className="request-footer"><small>{status?.search_configured ? `Search provider: ${status.search_provider}` : "Without a configured search provider, discovery is limited to the supplied website and its accessible sources."}</small>
             <button type="submit" disabled={busy || !status?.enabled || !consent || !company.trim() || !website.trim()}><UiIcon name="spark" size={17} />{busy ? "Starting research..." : "Start research"} <UiIcon name="arrow" size={16} /></button></div>
         </form>
@@ -232,8 +236,35 @@ export default function IntelligenceWorkspace({ lead, initialJobId }: { lead?: L
           {lead && factsTotal > 0 && <a className="button-link" href={`/leads/${encodeURIComponent(lead.id)}#outreach`}><UiIcon name="mail" size={16} /> Choose facts for outreach</a>}
           {lead && <Link className="button-link secondary" href={`/?lead=${encodeURIComponent(lead.id)}#companies`}><UiIcon name="companies" size={16} /> Find decision-makers</Link>}
           {["failed", "partial"].includes(job.status) && <button className="secondary" disabled={busy} onClick={() => void jobAction("retry")}><UiIcon name="refresh" size={16} /> Retry failed work</button>}
+          {terminal.has(job.status) && (
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => {
+                setCompany(job.company_name);
+                setWebsite(job.domain);
+                void startResearch(true);
+              }}
+            >
+              <UiIcon name="spark" size={16} /> Re-run fresh research
+            </button>
+          )}
           {!terminal.has(job.status) && <button className="secondary" disabled={busy} onClick={() => void jobAction("cancel")}>Cancel research</button>}
-          {terminal.has(job.status) && <button className="secondary" disabled={busy} onClick={() => { setShowForm(true); setConsent(false); setCompany(job.company_name); setWebsite(job.domain); }}>Review & refresh research</button>}
+          {terminal.has(job.status) && (
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => {
+                setShowForm(true);
+                setConsent(true);
+                setForceRefresh(true);
+                setCompany(job.company_name);
+                setWebsite(job.domain);
+              }}
+            >
+              Review & refresh research
+            </button>
+          )}
           <Link className="text-link" href={`/intelligence/jobs/${job.id}`}>Open research workspace <UiIcon name="external" size={14} /></Link>
         </div>
         {showForm && terminal.has(job.status) && <p className="field-help">To bypass fresh cached research, review the form and explicitly refresh below.</p>}

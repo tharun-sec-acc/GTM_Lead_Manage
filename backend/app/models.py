@@ -338,3 +338,15 @@ class ResearchFactOverride(Base):
     reason: Mapped[str | None] = mapped_column(Text)
     created_by_note: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+# Unified Meeting Intelligence Models
+from app.meetings.models import (  # noqa: E402
+    Meeting,
+    MeetingParticipant,
+    MeetingRecording,
+    MeetingTranscript,
+    MeetingTranscriptEntry,
+    MeetingAnalysis,
+    MeetingActionItem,
+)

@@ -220,7 +220,7 @@ def create_research(data: ResearchRequest, session: Session = Depends(get_db)):
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, settings.research_cache_ttl_hours))
     recent = session.scalar(select(ResearchJob).where(
         ResearchJob.company_id == company.id,
-        ResearchJob.status.in_(("completed", "partial")),
+        ResearchJob.status == "completed",
         ResearchJob.depth == data.depth,
         ResearchJob.inference_profile_id == data.inference_profile_id,
         ResearchJob.created_at >= cutoff,
@@ -335,6 +335,8 @@ def retry_research(job_id: str, session: Session = Depends(get_db)):
         retryable = session.scalars(select(ResearchAgentRun).where(
             ResearchAgentRun.job_id == job.id, ResearchAgentRun.status == "pending"
         )).all()
+    if not retryable and failed:
+        retryable = failed
     if not retryable:
         raise HTTPException(409, "No failed agent is eligible for retry.")
     for run in retryable:

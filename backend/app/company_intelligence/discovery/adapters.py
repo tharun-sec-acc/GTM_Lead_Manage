@@ -250,8 +250,30 @@ def _api_allowed(url: str, deadline: float | None, notes: list[str]) -> bool:
 
 def directory_candidates(company_name: str, deadline: float | None, limit: int,
                          notes: list[str]) -> list[Candidate]:
-    """Wikipedia and Wikidata search APIs: public indexes, no credentials required."""
+    """Wikipedia and Wikidata: public indexes, no credentials required."""
     candidates: list[Candidate] = []
+
+    # 1. Deterministic direct Wikipedia candidate URLs (permitted by robots.txt)
+    clean_name = re.sub(r"\b(pvt|ltd|limited|private|llc|inc|corp|extended care|india)\b", "", company_name, flags=re.IGNORECASE).strip()
+    name_variants = [
+        company_name.strip(),
+        clean_name,
+        company_name.replace("Logistics", "Group").strip() if "Logistics" in company_name else "",
+        clean_name.replace("Logistics", "Group").strip() if "Logistics" in clean_name else "",
+    ]
+    seen_wiki = set()
+    for variant in name_variants:
+        if not variant or variant in seen_wiki:
+            continue
+        seen_wiki.add(variant)
+        title_slug = variant.replace(" ", "_")
+        candidates.append(Candidate(
+            url=f"https://en.wikipedia.org/wiki/{quote_plus(title_slug)}",
+            title=f"{variant} - Wikipedia",
+            discovered_via="wikipedia_directory",
+            snippet=f"Wikipedia encyclopedia profile for {variant}",
+        ))
+
     wikipedia_url = ("https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch="
                      f"{quote_plus(company_name)}&format=json&srlimit=3")
     if _api_allowed(wikipedia_url, deadline, notes):
@@ -286,6 +308,50 @@ def directory_candidates(company_name: str, deadline: float | None, limit: int,
                     ))
         except (SourceError, ValueError, TypeError) as exc:
             notes.append(f"Wikidata discovery: {exc}")
+    return candidates[:limit]
+
+
+def news_rss_candidates(company_name: str, queries: list[str] | None, deadline: float | None,
+                        limit: int, notes: list[str]) -> list[Candidate]:
+    """Public news RSS search (keyless, standard RSS XML format)."""
+    candidates: list[Candidate] = []
+    clean_name = re.sub(r"\b(pvt|ltd|limited|private|llc|inc|corp|extended care)\b", "", company_name, flags=re.IGNORECASE).strip()
+    search_queries = [
+        f"{clean_name} news",
+        f"{clean_name} financial results revenue",
+        f"{clean_name} fleet logistics operations",
+    ]
+    if queries:
+        for q in queries:
+            if len(q) < 80 and q not in search_queries:
+                search_queries.append(q)
+
+    seen_urls: set[str] = set()
+    for q in search_queries[:4]:
+        if len(candidates) >= limit:
+            break
+        feed_url = f"https://news.google.com/rss/search?q={quote_plus(q)}&hl=en-IN&gl=IN&ceid=IN:en"
+        try:
+            text, _ = fetch_public_text(feed_url, MAX_RESOURCE_BYTES, deadline)
+            root = _xml(text)
+            for item in root.findall(".//item"):
+                title = _child_text(item, "title")
+                link = _child_text(item, "link")
+                pub_date = _parse_date(_child_text(item, "pubDate"))
+                if not link or link in seen_urls:
+                    continue
+                seen_urls.add(link)
+                candidates.append(Candidate(
+                    url=link,
+                    title=title,
+                    discovered_via="news_rss_feed",
+                    published_at=pub_date,
+                    snippet=f"News: {title}",
+                ))
+                if len(candidates) >= limit:
+                    break
+        except Exception as exc:
+            notes.append(f"News RSS discovery ({q}): {exc}")
     return candidates[:limit]
 
 

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import UiIcon from "../components/ui-icon";
 import WorkspaceOverview from "../components/workspace-overview";
 import IntelligenceWorkspace from "../components/intelligence-workspace";
+import BulkOutreachModal from "../components/bulk-outreach-modal";
 
 const API = "http://localhost:8000";
 const fields = [
@@ -92,6 +93,7 @@ function CompanyWorkspace() {
   const [mapping, setMapping] = useState<Record<string, Record<string, string>>>({});
   const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [batch, setBatch] = useState<Batch | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [lead, setLead] = useState<Lead | null>(null);
@@ -123,8 +125,6 @@ function CompanyWorkspace() {
 
   useEffect(() => {
     refresh().catch(error => setMessage(error.message));
-    const timer = setInterval(() => refresh().catch(error => setMessage(error.message)), 10000);
-    return () => clearInterval(timer);
   }, [refresh]);
 
   useEffect(() => {
@@ -276,8 +276,36 @@ function CompanyWorkspace() {
         </div>}
       </section>
       <section id="companies">
-        <div className="section-title"><div><p className="eyebrow">02 / FIND YOUR NEXT COMPANY</p><h2>Review companies</h2>
-          <p>Search your imported list by company name or domain, then research the business or find its people.</p></div></div>
+        <div className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+          <div>
+            <p className="eyebrow">02 / FIND YOUR NEXT COMPANY</p>
+            <h2>Review companies</h2>
+            <p>Search your imported list by company name or domain, then research the business or find its people.</p>
+          </div>
+          <div>
+            <button
+              type="button"
+              className="button-link"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                fontSize: "13px",
+                padding: "8px 16px",
+                cursor: "pointer",
+                boxShadow: "0 2px 6px rgba(220, 38, 38, 0.18)",
+              }}
+              onClick={() => setShowBulkModal(true)}
+            >
+              <UiIcon name="mail" size={15} /> ✉️ Email All Leads / Bulk Outreach
+            </button>
+          </div>
+        </div>
+        <BulkOutreachModal
+          isOpen={showBulkModal}
+          onClose={() => setShowBulkModal(false)}
+          onSuccess={refresh}
+        />
         <div className="company-toolbar"><div className="report-search"><UiIcon name="search" size={18} /><input type="search" aria-label="Search companies" value={leadQuery}
           onChange={event => setLeadQuery(event.target.value)} placeholder="Search company, domain, industry or location..." /></div>
           <label>Company filter<select value={leadFilter} onChange={event => setLeadFilter(event.target.value)}>
@@ -338,7 +366,7 @@ function CompanyWorkspace() {
                   apollo_id: person.id, organization_confirmed: !person.organization_matches,
                 }));
                 setContacts(await request<Contact[]>(`/leads/${lead.id}/contacts`));
-                setMessage("Contact saved. Only an email on the confirmed company domain was retained.");
+                setMessage("Contact saved successfully.");
               });
             }}>Select & enrich</button>
           </div>)}</div>
@@ -363,6 +391,12 @@ function CompanyWorkspace() {
               <p>{contact.title || "—"} · {contact.email || "Business email unavailable"}</p>
               <small>{contact.source} · {contact.verification_status} · {new Date(contact.retrieved_at).toLocaleString()}</small>
               <div className="actions">
+                <button disabled={busy} onClick={() => void run(async () => {
+                  const updatedEmail = window.prompt("Update business email", contact.email || "");
+                  if (updatedEmail === null) return;
+                  await request(`/leads/${lead.id}/contacts/${contact.id}`, jsonOptions("PUT", { email: updatedEmail.trim() || null }));
+                  setContacts(await request<Contact[]>(`/leads/${lead.id}/contacts`));
+                })}>Edit email</button>
                 <button disabled={busy} onClick={() => void run(async () => {
                   const title = window.prompt("Update designation", contact.title || "");
                   if (title === null) return;

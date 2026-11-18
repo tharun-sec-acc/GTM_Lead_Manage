@@ -1,4 +1,4 @@
-﻿"""Storage adapter interface and local Docker-volume implementation."""
+"""Storage adapter interface and local Docker-volume implementation."""
 
 import os
 import tempfile
@@ -35,7 +35,13 @@ class StorageAdapter(ABC):
 class LocalStorageAdapter(StorageAdapter):
     """Stores files on the local filesystem under base_dir."""
 
-    def __init__(self, base_dir: str = "/app/attachments"):
+    def __init__(self, base_dir: str | None = None):
+        if base_dir is None:
+            base_dir = os.environ.get("ATTACHMENT_STORAGE_DIR", "/app/attachments")
+            try:
+                Path(base_dir).mkdir(parents=True, exist_ok=True)
+            except (PermissionError, OSError):
+                base_dir = str(Path(__file__).resolve().parent.parent / "attachments")
         self._base = Path(base_dir)
         self._base.mkdir(parents=True, exist_ok=True)
 

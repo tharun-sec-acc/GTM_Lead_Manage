@@ -252,6 +252,37 @@ def test_apollo_wrong_organization_is_not_enriched_without_sales_confirmation(db
     assert len(client.get(f"/leads/{lead_id}/contacts").json()) == 1
 
 
+def test_apollo_enrich_preserves_email_when_organization_matches_or_domain_variant(db, monkeypatch):
+    client, factory = db
+    with factory.begin() as session:
+        lead = Lead(company_name="VRL Logistics", company_key="vrl logistics", domain="vrlgroup.in", extra={})
+        session.add(lead)
+        session.flush()
+        lead_id = lead.id
+
+    monkeypatch.setattr("app.apollo.search_people", lambda domain: [{
+        "id": "p_vrl", "name": "Surendra Nayak", "organization": {
+            "name": "VRL Logistics",
+        },
+        "has_email": True,
+    }])
+    monkeypatch.setattr("app.apollo.enrich_person", lambda person_id: {
+        "name": "Surendra Nayak",
+        "email": "surendra.nayak@vrllogistics.com",
+        "organization": {"name": "VRL Logistics", "primary_domain": "vrllogistics.com"},
+    })
+
+    search_res = client.post(f"/leads/{lead_id}/apollo/search").json()
+    assert len(search_res) == 1
+    assert search_res[0]["organization_matches"] is True
+    assert search_res[0]["organization_domain"] == "vrlgroup.in"
+
+    enrich_res = client.post(f"/leads/{lead_id}/apollo/enrich", json={"apollo_id": "p_vrl"})
+    assert enrich_res.status_code == 200
+    assert enrich_res.json()["email"] == "surendra.nayak@vrllogistics.com"
+    assert enrich_res.json()["verification_status"] == "organization_verified"
+
+
 def test_manual_contact_create_update_and_soft_remove(db):
     client, factory = db
     with factory.begin() as session:
@@ -308,7 +339,7 @@ def test_lead_profile_exposes_existing_outreach_history_without_claiming_deliver
     assert profile["overview"]["contact_count"] == 1
     assert profile["overview"]["email_count"] == 1
     assert profile["overview"]["reply_count"] == 1
-    assert profile["meetings"] == {"implemented": False, "items": []}
+    assert profile["meetings"] == {"implemented": True, "items": []}
     assert profile["email_history"][0]["status"] == "sent"
     assert profile["email_history"][0]["events"][0]["type"] == "smtp_accepted"
     assert profile["email_history"][0]["delivery_confirmed"] is False

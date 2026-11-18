@@ -1,4 +1,4 @@
-﻿"""Attachment upload, download, and delete with size/MIME validation."""
+"""Attachment upload, download, and delete with size/MIME validation."""
 
 import hashlib
 import mimetypes
@@ -58,6 +58,76 @@ def _current_total(session: Session, message_id: str) -> int:
         )
     ).all()
     return sum(r.size_bytes for r in rows)
+
+
+@router.post("/attachments/upload", status_code=201)
+async def upload_standalone_attachment(
+    file: UploadFile = File(...),
+    message_id: str | None = None,
+    session: Session = Depends(get_db),
+    storage: StorageAdapter = Depends(get_storage),
+):
+    msg = _require_message(session, message_id) if message_id else None
+
+    filename = file.filename or "upload"
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(422, f"File extension {ext!r} is not allowed.")
+
+    data = await file.read()
+    size = len(data)
+
+    if size > MAX_FILE_BYTES:
+        raise HTTPException(422, f"File exceeds the {MAX_FILE_BYTES // 1024 // 1024} MB limit.")
+
+    detected_mime = file.content_type or ""
+    if not detected_mime or detected_mime in ("application/octet-stream", "binary/octet-stream"):
+        detected_mime = mimetypes.guess_type(filename)[0] or ""
+    if detected_mime not in ALLOWED_MIME_TYPES:
+        raise HTTPException(422, f"Content type {detected_mime!r} is not allowed.")
+
+    if message_id:
+        current_total = _current_total(session, message_id)
+        if current_total + size > MAX_TOTAL_BYTES:
+            raise HTTPException(422, f"Total attachment size would exceed the {MAX_TOTAL_BYTES // 1024 // 1024} MB limit.")
+
+    safe_name = _safe_filename(filename)
+    key = f"att_{uuid4().hex}_{safe_name}"
+
+    att = EmailAttachment(
+        message_id=message_id,
+        upload_session_id=str(uuid4()),
+        filename_safe=safe_name,
+        content_type=detected_mime,
+        size_bytes=size,
+        storage_key=key,
+        upload_status="pending",
+        created_at=now(),
+    )
+    session.add(att)
+    session.flush()
+
+    try:
+        storage.store(key, data)
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(500, f"Storage error: {exc}") from exc
+
+    att.upload_status = "complete"
+    if msg and msg.status == "approved":
+        msg.status = "draft"
+        msg.approved_at = None
+
+    session.commit()
+    return {
+        "id": att.id,
+        "message_id": message_id,
+        "filename_safe": att.filename_safe,
+        "content_type": att.content_type,
+        "size_bytes": att.size_bytes,
+        "upload_status": att.upload_status,
+        "created_at": att.created_at,
+    }
 
 
 @router.post("/messages/{message_id}/attachments", status_code=201)
