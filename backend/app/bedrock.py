@@ -212,6 +212,7 @@ def converse_json(instruction: str, data: dict, model_id: str | None = None, *,
     if parsed is None:
         recovered = _salvage_json(text)
         if recovered is not None:
+            logger.info("Successfully recovered JSON from partially truncated Bedrock output.")
             parsed = recovered
         elif response.get("stopReason") == "max_tokens":
             raise RuntimeError("Bedrock output was truncated before the response was complete. "

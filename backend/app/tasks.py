@@ -25,6 +25,7 @@ celery_app.conf.update(
         "dispatch-due-mail": {"task": "app.tasks.dispatch_due_mail", "schedule": 30.0},
         "classify-replies": {"task": "app.tasks.classify_replies", "schedule": 60.0},
         "poll-meeting-artifacts": {"task": "app.tasks.poll_meeting_artifacts", "schedule": 300.0},
+        "cleanup-expired-booking-reservations": {"task": "app.tasks.cleanup_expired_booking_reservations_task", "schedule": 60.0},
     },
 )
 
@@ -146,10 +147,10 @@ def sync_meeting_artifacts_task(meeting_id: str):
         with SessionLocal.begin() as session:
             result = meeting_service.sync_meeting_artifacts(session, meeting_id)
         
-        # If transcripts were newly synced and no analysis exists, run Bedrock AI analysis automatically
+        # If no analysis exists, run Bedrock AI analysis automatically
         with SessionLocal.begin() as session:
             meeting = session.get(Meeting, meeting_id)
-            if meeting and meeting.transcripts and not meeting.analyses:
+            if meeting and not meeting.analysis:
                 try:
                     meeting_service.analyze_meeting(session, meeting_id)
                 except Exception as e:
@@ -181,4 +182,10 @@ def poll_meeting_artifacts():
 
     for mid in meeting_ids:
         sync_meeting_artifacts_task.delay(mid)
+
+
+@celery_app.task(name="app.tasks.cleanup_expired_booking_reservations_task")
+def cleanup_expired_booking_reservations_task():
+    from app.booking.tasks.booking_tasks import cleanup_expired_booking_reservations_sync
+    return cleanup_expired_booking_reservations_sync()
 

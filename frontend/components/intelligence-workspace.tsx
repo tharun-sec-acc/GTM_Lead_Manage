@@ -11,12 +11,27 @@ type LeadContext = { id: string; company_name: string; domain: string | null };
 const terminal = new Set(["completed", "partial", "failed", "canceled", "cancelled"]);
 const agentDescriptions: Record<string, string> = {
   company: "Identity, business model, products and locations",
-  news: "Dated announcements and relevant developments",
-  financial: "Reported financials, periods and entity scope",
-  funding: "Disclosed investments, rounds and acquisitions",
+  company_identity: "Identity, corporate structure, products and locations",
   leadership: "Public leadership and appointment evidence",
+  leadership_intelligence: "Public leadership and executive management evidence",
+  corporate_relationships: "Parent entities, group structures and subsidiaries",
+  financial: "Reported financials, periods and entity scope",
+  financial_research: "Reported financials, margins, segments and entity scope",
+  funding: "Disclosed investments, rounds and acquisitions",
+  investment_funding: "Disclosed investments, capex and acquisitions",
+  financial_risk: "Reported liabilities, debt, risk disclosures and audits",
+  business_operations: "Facilities, regional presence, hubs and service networks",
+  fleet_transportation: "Commercial vehicle fleets, transport and transit logistics",
+  manufacturing_infrastructure: "Manufacturing plants, factories, machinery and OEE",
+  technology_digital: "Enterprise IT stacks, ERP, telematics and automation",
+  news: "Dated announcements and relevant developments",
+  news_developments: "Dated corporate announcements and contracts",
   competitors: "Supported market and competitor relationships",
-  signals: "Observed developments, separate from opportunities",
+  competitor_intelligence: "Market share, peers and competitive dynamics",
+  industry_market: "Macro industry trends, compliance and regulatory environment",
+  hiring_expansion: "Hiring signals, department growth and facility expansion",
+  signals: "Observed developments and operational opportunities",
+  pain_points_opportunities: "Operational pain points and sales opportunity signals",
   verification: "Evidence support, duplicates and conflicts",
   synthesis: "Consolidated findings without new factual claims",
 };
@@ -126,16 +141,19 @@ export default function IntelligenceWorkspace({ lead, initialJobId }: { lead?: L
     finally { setProfilesLoading(false); }
   }
 
-  async function startResearch(overrideForceRefresh?: boolean) {
+  async function startResearch(overrideForceRefresh?: boolean, overrideParams?: { company_name?: string; website?: string; depth?: string }) {
     const shouldForce = overrideForceRefresh !== undefined ? overrideForceRefresh : forceRefresh;
+    const targetCompany = overrideParams?.company_name || company;
+    const targetWebsite = overrideParams?.website || website;
+    const targetDepth = overrideParams?.depth || depth;
     setBusy(true); setError(""); setNotice("");
     try {
       const result = await request<{ job_id: string; company_id: string; reused: boolean }>("/intelligence/research", "POST", {
-        company_name: company, website, country: country || null, registration_id: registrationId || null,
-        lead_id: lead?.id || null, depth, inference_profile_id: profileId || null, force_refresh: shouldForce,
+        company_name: targetCompany, website: targetWebsite, country: country || null, registration_id: registrationId || null,
+        lead_id: lead?.id || null, depth: targetDepth, inference_profile_id: profileId || null, force_refresh: shouldForce,
       });
       setSelectedId(result.job_id); setPollVersion(value => value + 1); setShowForm(false);
-      setNotice(result.reused ? "Reopened existing research. No duplicate job was created." : "Research queued. Progress below comes from persisted worker activity.");
+      setNotice(result.reused ? "Reopened existing research. Click 'Re-run fresh research' below to run a brand-new analysis." : "Research queued. Progress below comes from persisted worker activity.");
       await loadWorkspace();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not start research."); }
     finally { setBusy(false); }
@@ -224,7 +242,11 @@ export default function IntelligenceWorkspace({ lead, initialJobId }: { lead?: L
         <div className="progress-heading"><strong>{label(job.stage)}</strong><span>{progress}%</span></div>
         <progress value={progress} max={100} aria-label="Overall research progress">{progress}%</progress>
         <div className="research-counts"><div><UiIcon name="link" size={17} /><strong>{job.sources_count}</strong><span>Sources</span></div>
-          <div><UiIcon name="file" size={17} /><strong>{job.pages_processed}</strong><span>Pages processed</span></div><div><UiIcon name="check" size={17} /><strong>{job.facts_count}</strong><span>Extracted findings</span></div></div>
+          <div><UiIcon name="file" size={17} /><strong>{job.pages_processed}</strong><span>Pages processed</span></div>
+          {job.documents_analyzed !== undefined && job.documents_analyzed > 0 && (
+            <div><UiIcon name="file" size={17} /><strong>{job.documents_analyzed}</strong><span>PDFs / Documents</span></div>
+          )}
+          <div><UiIcon name="check" size={17} /><strong>{job.facts_count}</strong><span>Extracted findings</span></div></div>
         {job.error && <div className="alert" role="alert">{job.error}</div>}
         <div className="agent-list">{job.agents.map(agent => <div key={agent.id} className={`agent-row ${statusTone(agent.status)}`}>
           <span className="agent-icon">{agent.status === "completed" ? <UiIcon name="check" size={17} /> : <UiIcon name={agent.agent === "verification" ? "link" : "spark"} size={17} />}</span>
@@ -243,7 +265,7 @@ export default function IntelligenceWorkspace({ lead, initialJobId }: { lead?: L
               onClick={() => {
                 setCompany(job.company_name);
                 setWebsite(job.domain);
-                void startResearch(true);
+                void startResearch(true, { company_name: job.company_name, website: job.domain, depth: job.depth || depth });
               }}
             >
               <UiIcon name="spark" size={16} /> Re-run fresh research
@@ -268,7 +290,7 @@ export default function IntelligenceWorkspace({ lead, initialJobId }: { lead?: L
           <Link className="text-link" href={`/intelligence/jobs/${job.id}`}>Open research workspace <UiIcon name="external" size={14} /></Link>
         </div>
         {showForm && terminal.has(job.status) && <p className="field-help">To bypass fresh cached research, review the form and explicitly refresh below.</p>}
-        {showForm && terminal.has(job.status) && <button className="secondary" disabled={busy || !consent || !status?.enabled} onClick={() => void startResearch(true)}>Refresh with new source collection</button>}
+        {showForm && terminal.has(job.status) && <button className="secondary" disabled={busy || !consent || !status?.enabled} onClick={() => void startResearch(true, { company_name: job.company_name, website: job.domain, depth: job.depth || depth })}>Refresh with new source collection</button>}
         <p className="field-help">Progress is persisted by background workers. Missing information and failed tasks are not filled with simulated data.</p>
       </section>}
       </div>

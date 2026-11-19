@@ -57,10 +57,12 @@ def research(tmp_path, monkeypatch):
 
     def converse(instruction, data, **kwargs):
         calls.append((instruction, data, kwargs))
-        source_id = data["sources"][0]["source_id"]
-        fact = {"field_name": "business", "value": "Synthetic Company manufactures test components.",
-                "source_id": source_id, "quote": TEXT}
-        return {"facts": [fact], "not_available": None}, {"input_tokens": 25, "output_tokens": 10}
+        if "sources" in data and data["sources"]:
+            source_id = data["sources"][0]["source_id"]
+            fact = {"field_name": "business", "value": "Synthetic Company manufactures test components.",
+                    "source_id": source_id, "quote": TEXT}
+            return {"facts": [fact], "not_available": None}, {"input_tokens": 25, "output_tokens": 10}
+        return {}, {"input_tokens": 25, "output_tokens": 10}
 
     monkeypatch.setattr(bedrock, "converse_json", converse)
     with factory.begin() as session:
@@ -94,7 +96,7 @@ def test_submission_reuse_disabled_and_domain_mismatch(research, monkeypatch):
     assert len(queued) == 1
     with factory() as session:
         assert session.scalar(select(func.count(CompanyResearchProfile.id))) == 1
-        assert session.scalar(select(func.count(ResearchAgentRun.id))) == 9
+        assert session.scalar(select(func.count(ResearchAgentRun.id))) == 17
 
 
 def test_complete_lifecycle_report_snapshots_and_duplicate_worker(research):
@@ -102,13 +104,15 @@ def test_complete_lifecycle_report_snapshots_and_duplicate_worker(research):
     created = submit(client, lead_id, depth="comprehensive").json()
     result = orchestrator.run_research_job(created["job_id"])
     assert result["status"] == "completed"
-    assert len(calls) == 7
+    extraction_calls = [c for c in calls if "sources" in c[1]]
+    assert len(extraction_calls) == 15
     assert orchestrator.run_research_job(created["job_id"])["status"] == "completed"
-    assert len(calls) == 7
+    extraction_calls = [c for c in calls if "sources" in c[1]]
+    assert len(extraction_calls) == 15
     detail = client.get(f"/intelligence/research/{created['job_id']}").json()
-    assert detail["progress"] == 100 and detail["facts_count"] == 7
+    assert detail["progress"] == 100 and detail["facts_count"] == 15
     report = client.get(f"/intelligence/reports/{detail['report_id']}").json()
-    assert report["version"] == 1 and len(report["sections"]) == 7
+    assert report["version"] == 1 and len(report["sections"]) == 15
     assert "manufactures test components" in report["summary"]
     assert all(fact["verification_status"] == "reported" for fact in client.get(
         f"/intelligence/companies/{created['company_id']}/facts").json()["items"])
@@ -117,7 +121,7 @@ def test_complete_lifecycle_report_snapshots_and_duplicate_worker(research):
     assert second["job_id"] != created["job_id"]
     assert client.get(f"/intelligence/companies/{created['company_id']}/facts").json()["total"] == 0
     assert client.get(f"/intelligence/companies/{created['company_id']}/facts",
-                      params={"job_id": created["job_id"]}).json()["total"] == 7
+                      params={"job_id": created["job_id"]}).json()["total"] == 15
     orchestrator.run_research_job(second["job_id"])
     assert client.get(f"/intelligence/companies/{created['company_id']}/sources",
                       params={"job_id": created["job_id"]}).json()["total"] == 1

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import UnifiedMeetingsView from "../../components/unified-meetings-view";
+import BookingManagement from "../../components/booking-management";
 
 const API = "http://localhost:8000";
 
@@ -146,6 +147,11 @@ export default function MeetingsPage() {
           )}
         </section>
       )}
+
+      {/* Customer Public Booking Management */}
+      <section style={{ marginBottom: 28 }}>
+        <BookingManagement />
+      </section>
 
       {/* Unified Meeting Management Component */}
       <UnifiedMeetingsView />

@@ -33,6 +33,9 @@ class Page:
     content_hash: str
     retrieval_method: str = "http"
     external_links: list[str] = field(default_factory=list)
+    is_document: bool = False
+    mime_type: str = "text/html"
+    total_pages: int | None = None
 
 
 @dataclass
@@ -177,7 +180,7 @@ def _pinned_request(url: str, allowed_domain: str | None, max_bytes: int,
             path += "?" + quote(parsed.query, safe="=&;%:@!$'()*+,-._~/?")
         last_error = None
         response = None
-        for address in addresses[:1]:
+        for address in addresses[:3]:
             sock = None
             try:
                 remaining = deadline - time.monotonic()
@@ -189,13 +192,28 @@ def _pinned_request(url: str, allowed_domain: str | None, max_bytes: int,
                 user_agent = (
                     "Mozilla/5.0 (compatible; GTMProspectingResearch/1.0; admin@denso-prospecting.com)"
                     if "sec.gov" in host
-                    else "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 (compatible; GTMProspectingResearch/1.0)"
+                    else "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
                 )
-                request = (
-                    f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: {user_agent}\r\n"
-                    f"Accept: text/html,application/pdf,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.1\r\n"
-                    f"Accept-Encoding: gzip, deflate\r\nConnection: close\r\n\r\n"
-                ).encode("ascii")
+                headers_list = [
+                    f"GET {path} HTTP/1.1",
+                    f"Host: {host}",
+                    f"User-Agent: {user_agent}",
+                    "Accept: text/html,application/pdf,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Accept-Language: en-US,en;q=0.9",
+                    "Accept-Encoding: gzip, deflate",
+                    "sec-ch-ua: \"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+                    "sec-ch-ua-mobile: ?0",
+                    "sec-ch-ua-platform: \"Windows\"",
+                    "Sec-Fetch-Dest: document",
+                    "Sec-Fetch-Mode: navigate",
+                    "Sec-Fetch-Site: none",
+                    "Sec-Fetch-User: ?1",
+                    "Upgrade-Insecure-Requests: 1",
+                    "Connection: close",
+                    "",
+                    "",
+                ]
+                request = "\r\n".join(headers_list).encode("utf-8")
                 sock.sendall(request)
                 raw = http.client.HTTPResponse(sock)
                 raw.begin()
@@ -231,10 +249,12 @@ def _pinned_request(url: str, allowed_domain: str | None, max_bytes: int,
                     break
                 if raw.status < 200 or raw.status >= 300:
                     raise SourceError(f"Company website returned HTTP {raw.status}.")
+                is_pdf = path.lower().endswith(".pdf") or "pdf" in headers.get("content-type", "").lower()
+                read_cap = max(max_bytes * 6, 20_000_000) if is_pdf else max_bytes * 4
                 content_length = headers.get("content-length")
-                if content_length and int(content_length) > max_bytes * 4:
+                if content_length and int(content_length) > read_cap:
                     raise SourceError("Company website page exceeds the configured byte limit.")
-                body = _read_body(raw, sock, max_bytes * 4, deadline)
+                body = _read_body(raw, sock, read_cap, deadline)
                 enc = headers.get("content-encoding", "").lower().strip()
                 if enc == "gzip":
                     try:
@@ -251,7 +271,7 @@ def _pinned_request(url: str, allowed_domain: str | None, max_bytes: int,
                             raise SourceError(f"Could not decompress deflate response: {exc}") from exc
                 elif enc not in ("", "identity"):
                     raise SourceError(f"Unsupported content-encoding: {enc}")
-                if len(body) > max_bytes:
+                if not is_pdf and len(body) > max_bytes:
                     body = body[:max_bytes]
                 raw.close()
                 response = _Response(current, raw.status, headers, body)
@@ -336,15 +356,25 @@ def _text_from_pdf(content: bytes) -> list[tuple[int, str]]:
 
 def _make_page(response: _Response, base_domain: str) -> Page | None:
     media_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    if media_type == "application/pdf" or response.url.lower().endswith(".pdf"):
-        pages = _text_from_pdf(response.body)
-        text = "\n".join(f"[Page {number}] {page_text}" for number, page_text in pages if page_text)
-        if not text:
-            return None
-        title = urlsplit(response.url).path.rsplit("/", 1)[-1] or "Company PDF"
-        category = _path_category(urlsplit(response.url).path)
-        return Page(response.url, title, text[:max(1, settings.research_max_content_size)], [], None,
-                    category, hashlib.sha256(response.body).hexdigest(), "http_pdf")
+    if media_type == "application/pdf" or response.url.lower().endswith(".pdf") or response.body.startswith(b"%PDF-"):
+        from app.company_intelligence.sources.document import extract_pdf_document
+        doc = extract_pdf_document(response.body, response.url)
+        if doc and doc.text.strip():
+            return Page(
+                url=response.url,
+                title=doc.title,
+                text=doc.text[:max(1, settings.research_max_content_size)],
+                links=[],
+                published_at=None,
+                category=doc.category,
+                content_hash=doc.content_hash,
+                retrieval_method="http_pdf",
+                external_links=[],
+                is_document=True,
+                mime_type="application/pdf",
+                total_pages=doc.total_pages,
+            )
+        return None
     if media_type not in {"text/html", "application/xhtml+xml"}:
         raise SourceError("Company website returned a non-HTML, non-PDF response.")
     charset = response.headers.get("content-type", "")
@@ -424,13 +454,15 @@ def _json_page(response: _Response) -> Page | None:
 def _page_priority(url: str) -> tuple[int, str]:
     path = urlsplit(url).path.lower()
     priorities = (
-        ("about", 0), ("overview", 0), ("who-we-are", 0), ("corporate", 0),
-        ("leadership", 1), ("management", 1), ("board", 1), ("team", 1), ("director", 1), ("executive", 1), ("governance", 1),
-        ("investor", 2), ("financial", 2), ("annual-report", 2), ("result", 2), ("filing", 2), ("shareholder", 2),
-        ("product", 3), ("service", 3), ("solution", 3), ("operation", 3),
-        ("fleet", 4), ("network", 4), ("infrastructure", 4), ("warehouse", 4), ("transport", 4), ("logistics", 4),
-        ("news", 5), ("press", 5), ("media", 5), ("announcement", 5), ("release", 5),
-        ("technology", 6), ("sustainability", 6), ("esg", 6), ("career", 7), ("contact", 8),
+        ("annual-report", 0), ("financial-result", 0), ("investor-presentation", 0),
+        ("about", 1), ("overview", 1), ("who-we-are", 1), ("corporate", 1),
+        ("leadership", 2), ("management", 2), ("board", 2), ("director", 2), ("governance", 2),
+        ("investor", 3), ("financial", 3), ("filing", 3), ("quarterly", 3), ("results", 3),
+        ("product", 4), ("service", 4), ("solution", 4), ("manufacturing", 4), ("facility", 4),
+        ("fleet", 5), ("network", 5), ("infrastructure", 5), ("warehouse", 5), ("transport", 5), ("logistics", 5),
+        (".pdf", 3),
+        ("news", 6), ("press", 6), ("media", 6), ("announcement", 6), ("release", 6),
+        ("technology", 7), ("sustainability", 7), ("esg", 7), ("career", 8), ("contact", 9),
     )
     return (next((priority for token, priority in priorities if token in path), 10), url)
 

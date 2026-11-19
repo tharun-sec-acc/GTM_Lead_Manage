@@ -139,6 +139,8 @@ def _discover(domain: str, company_name: str, seed_texts: list[str], seed_links:
     if settings.research_discovery_gleif_enabled:
         attempt("GLEIF registry", lambda: adapters.gleif_candidates(
             company_name, deadline, 3, limitations))
+    attempt("Search accelerator", lambda: adapters.search_accelerator_candidates(
+        company_name, [q.text for q in queries] if queries else None, deadline, 6, limitations))
     return raw
 
 

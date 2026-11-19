@@ -416,3 +416,74 @@ def gleif_candidates(company_name: str, deadline: float | None, limit: int,
             snippet=str((entity.get("legalAddress") or {}).get("city") or "")[:300],
         ))
     return candidates
+
+
+def search_accelerator_candidates(
+    company_name: str,
+    queries: list[str] | None,
+    deadline: float | None,
+    limit: int,
+    notes: list[str],
+) -> list[Candidate]:
+    """Optional commercial search provider accelerator (Tavily or Serper).
+
+    Retrieves discovery candidate URLs when configured.
+    Never establishes facts directly; raw sources must be fetched and grounded.
+    """
+    from app.config import settings
+    provider = (settings.research_search_provider or "").strip().lower()
+    api_key = (settings.research_search_api_key or "").strip()
+    if not provider or not api_key:
+        return []
+
+    import httpx
+    candidates: list[Candidate] = []
+    search_queries = [f"{company_name} official website overview"]
+    if queries:
+        for q in queries[:2]:
+            if q not in search_queries:
+                search_queries.append(q)
+
+    for q in search_queries[:2]:
+        if len(candidates) >= limit:
+            break
+        try:
+            if provider == "tavily":
+                resp = httpx.post(
+                    "https://api.tavily.com/search",
+                    json={"query": q, "search_depth": "basic", "max_results": min(limit, 5), "api_key": api_key},
+                    timeout=10.0,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for item in data.get("results", []):
+                        url = item.get("url")
+                        if url:
+                            candidates.append(Candidate(
+                                url=url,
+                                title=item.get("title", ""),
+                                discovered_via="tavily_search",
+                                snippet=item.get("content", "")[:300],
+                            ))
+            elif provider == "serper":
+                resp = httpx.post(
+                    "https://google.serper.dev/search",
+                    headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+                    json={"q": q, "num": min(limit, 5)},
+                    timeout=10.0,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for item in data.get("organic", []):
+                        link = item.get("link")
+                        if link:
+                            candidates.append(Candidate(
+                                url=link,
+                                title=item.get("title", ""),
+                                discovered_via="serper_search",
+                                snippet=item.get("snippet", "")[:300],
+                            ))
+        except Exception as exc:
+            notes.append(f"Search accelerator ({provider}): {exc}")
+
+    return candidates[:limit]

@@ -29,6 +29,8 @@ from app.attachments import router as attachments_router
 from app.product_research import router as product_research_router
 from app.meetings import router as meetings_router
 from app.meetings.service import meeting_service
+from app.booking.routes import router as booking_router
+from app.booking.models import Booking
 
 app = FastAPI(title="DENSO Prospecting Pilot")
 app.include_router(followup_router)
@@ -41,6 +43,8 @@ app.include_router(templates_router)
 app.include_router(attachments_router)
 app.include_router(product_research_router)
 app.include_router(meetings_router)
+app.include_router(booking_router)
+app.include_router(booking_router, prefix="/api")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -419,6 +423,22 @@ def lead_profile(lead_id: str, limit: int = Query(default=200, ge=1, le=500),
             m["id"],
             f"Meeting ({m['provider'].upper()}): {m['title']}",
             {"status": m["status"], "join_url": m["join_url"], "type": m["meeting_type"]},
+        )
+    lead_bookings = session.scalars(select(Booking).where(Booking.lead_id == lead.id)).all()
+    for b in lead_bookings:
+        add_activity(
+            "public_booking",
+            b.created_at,
+            b.id,
+            f"Public Booking ({b.status.capitalize()}): {b.customer_name}",
+            {
+                "status": b.status,
+                "start_time": b.start_time.isoformat() if b.start_time else None,
+                "end_time": b.end_time.isoformat() if b.end_time else None,
+                "meet_uri": b.google_meet_uri,
+                "customer_email": b.customer_email,
+                "profile_slug": b.profile.public_slug if b.profile else None,
+            },
         )
     timeline.sort(key=lambda item: utc_timestamp(item["occurred_at"]), reverse=True)
     return {

@@ -36,12 +36,12 @@ class Settings(BaseSettings):
     research_max_concurrent_agents: int = 3
     research_max_pages_per_company: int = 25
     research_max_crawl_depth: int = 3
-    research_request_timeout: int = 12
-    research_max_duration_seconds: int = 120
+    research_request_timeout: int = 20
+    research_max_duration_seconds: int = 180
     research_cache_ttl_hours: int = 24
     research_max_retries: int = 2
-    research_max_content_size: int = 2_000_000
-    research_max_total_content_size: int = 8_000_000
+    research_max_content_size: int = 3_000_000
+    research_max_total_content_size: int = 15_000_000
     research_daily_budget: int = 100
     research_daily_bedrock_calls: int = 500
     research_daily_source_bytes: int = 50_000_000

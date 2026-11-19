@@ -17,6 +17,7 @@ export type ResearchStatus = { enabled: boolean; search_provider: string; search
 export type JobSummary = {
   id: string; company_id: string; company_name: string; domain: string; lead_id: string | null;
   status: string; progress: number; created_at: string; updated_at: string; report_id: string | null;
+  depth?: string;
 };
 export type AgentRun = {
   id: string; agent: string; status: string; progress: number; error: string | null;
@@ -24,7 +25,7 @@ export type AgentRun = {
 };
 export type ResearchJob = JobSummary & {
   stage: string; error: string | null; sources_count: number; pages_processed: number;
-  facts_count: number; agents: AgentRun[];
+  documents_analyzed?: number; facts_count: number; agents: AgentRun[];
 };
 export type Citation = {
   source_id: string; url: string; title: string; excerpt: string; page_number: number | null;
@@ -39,11 +40,16 @@ export type ResearchSource = {
   id: string; url: string; title: string; domain: string; publisher: string | null;
   published_at: string | null; retrieved_at: string; content_hash: string; category: string;
   reliability: string; retrieval_method: string; excerpt: string;
+  is_document?: boolean; mime_type?: string; total_pages?: number | null;
 };
 export type ResearchReport = {
   id: string; company_id: string; job_id: string; version: number; created_at: string; summary: string;
   sections: { category: string; title: string; status: string; fact_ids: string[]; text: string }[];
   limitations: string[];
+  one_page_summary?: Record<string, any> | null;
+  analysis_data?: Record<string, any> | null;
+  product_opportunities?: Array<Record<string, any>> | null;
+  what_changed?: Array<Record<string, any>> | null;
 };
 export type Page<T> = { items: T[]; total: number };
 export type InferenceProfile = { id: string; arn: string; name: string; type: string; regions: string[] };

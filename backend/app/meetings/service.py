@@ -126,6 +126,15 @@ class MeetingService:
 
         session.commit()
         session.refresh(meeting)
+
+        # Automatically generate initial AI meeting intelligence and MoM framework upon creation
+        try:
+            self.analyze_meeting(session, meeting.id)
+            session.expire(meeting)
+            meeting = session.get(Meeting, meeting.id)
+        except Exception as e:
+            logger.info("Automatic initial analysis for meeting %s deferred: %s", meeting.id, e)
+
         return meeting
 
     def list_meetings(
@@ -197,6 +206,17 @@ class MeetingService:
         m = session.get(Meeting, meeting_id)
         if not m:
             return None
+
+        # Automatically generate AI analysis & MoM if missing so sales reps never have to click
+        if not m.analysis:
+            try:
+                self.analyze_meeting(session, m.id)
+                session.expire(m)
+                m = session.get(Meeting, meeting_id)
+                if not m:
+                    return None
+            except Exception as e:
+                logger.warning("Auto-analysis in get_meeting_detail deferred for %s: %s", meeting_id, e)
 
         lead = session.get(Lead, m.lead_id) if m.lead_id else None
         contact = session.get(Contact, m.contact_id) if m.contact_id else None

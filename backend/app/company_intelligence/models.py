@@ -41,6 +41,7 @@ class ResearchJob(Base):
     inference_profile_id: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     error: Mapped[str | None] = mapped_column(Text)
     pages_processed: Mapped[int] = mapped_column(Integer, default=0)
+    documents_analyzed: Mapped[int] = mapped_column(Integer, default=0)
     sources_count: Mapped[int] = mapped_column(Integer, default=0)
     facts_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -92,9 +93,12 @@ class ResearchSource(Base):
     category: Mapped[str] = mapped_column(String(40), default="company")
     reliability: Mapped[str] = mapped_column(String(24), default="official")
     retrieval_method: Mapped[str] = mapped_column(String(24), default="http")
+    is_document: Mapped[bool] = mapped_column(default=False)
+    mime_type: Mapped[str] = mapped_column(String(120), default="text/html")
     excerpt: Mapped[str] = mapped_column(Text, default="")
     content_text: Mapped[str] = mapped_column(Text, default="")
     page_number: Mapped[int | None] = mapped_column(Integer)
+    total_pages: Mapped[int | None] = mapped_column(Integer)
 
 
 class ResearchFact(Base):
@@ -141,6 +145,10 @@ class ResearchReport(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     sections: Mapped[list] = mapped_column(JSON, default=list)
     limitations: Mapped[list] = mapped_column(JSON, default=list)
+    one_page_summary: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    analysis_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    product_opportunities: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    what_changed: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

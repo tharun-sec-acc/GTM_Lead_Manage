@@ -17,21 +17,59 @@ from app.company_intelligence.models import (CompanyResearchProfile, ResearchAge
 from app.company_intelligence.services.budget import (
     BudgetExceeded, release_source_bytes, reserve_source_bytes,
 )
+from app.company_intelligence.analysis import (
+    detect_research_changes,
+    evaluate_product_opportunities,
+    generate_one_page_summary,
+    generate_strategic_analysis,
+)
 from app.company_intelligence.discovery.engine import run_discovery
 from app.company_intelligence.sources.website import Page, SourceError, gather_official_pages
 
 logger = logging.getLogger(__name__)
 
-RESEARCH_CATEGORIES = ("company", "news", "financial", "funding", "leadership", "competitors", "signals")
+RESEARCH_CATEGORIES = (
+    "company",
+    "leadership",
+    "corporate_relationships",
+    "financial",
+    "funding",
+    "financial_risk",
+    "business_operations",
+    "fleet_transportation",
+    "manufacturing_infrastructure",
+    "technology_digital",
+    "news",
+    "competitors",
+    "industry_market",
+    "hiring_expansion",
+    "signals",
+)
 AGENTS = (*RESEARCH_CATEGORIES, "verification", "synthesis")
+
 TITLES = {
-    "company": "Company overview",
-    "news": "News and announcements",
-    "financial": "Financial information",
-    "funding": "Funding and investment",
-    "leadership": "Leadership and management",
-    "competitors": "Competitors and market",
-    "signals": "Business signals",
+    "company": "Company Profile & Identity",
+    "company_identity": "Company Profile & Identity",
+    "leadership": "Leadership & Governance",
+    "leadership_intelligence": "Leadership & Governance",
+    "corporate_relationships": "Corporate Relationships & Subsidiaries",
+    "financial": "Financial Performance & Scope",
+    "financial_research": "Financial Performance & Scope",
+    "funding": "Investments & Capital Allocation",
+    "investment_funding": "Investments & Capital Allocation",
+    "financial_risk": "Financial & Operational Risks",
+    "business_operations": "Facilities & Operational Footprint",
+    "fleet_transportation": "Fleet, Logistics & Transportation",
+    "manufacturing_infrastructure": "Manufacturing & Plant Infrastructure",
+    "technology_digital": "Technology, IT & Digital Maturity",
+    "news": "News & Corporate Developments",
+    "news_developments": "News & Corporate Developments",
+    "competitors": "Competitors & Market Share",
+    "competitor_intelligence": "Competitors & Market Share",
+    "industry_market": "Industry Trends & Regulations",
+    "hiring_expansion": "Hiring & Expansion Signals",
+    "signals": "Operational Pain Points & GTM Fit",
+    "pain_points_opportunities": "Operational Pain Points & GTM Fit",
 }
 
 
@@ -68,6 +106,9 @@ def _source_from_page(session, company_id: str, domain: str, page: Page) -> Rese
         published_at=page.published_at, retrieved_at=now(),
         content_hash=page.content_hash or hashlib.sha256(page.text.encode("utf-8")).hexdigest(),
         category=page.category, reliability="official", retrieval_method=page.retrieval_method,
+        is_document=getattr(page, "is_document", False),
+        mime_type=getattr(page, "mime_type", "text/html"),
+        total_pages=getattr(page, "total_pages", None),
         excerpt=page.text[:2000], content_text=page.text,
     )
     session.add(source)
@@ -170,14 +211,14 @@ def _format_executive_brief(company_name: str, grouped: dict[str, list[ResearchF
     paragraphs = []
 
     # 1. Company identity and business
-    company_facts = [f for f in grouped.get("company", []) if f.verification_status == "reported"]
+    company_facts = [f for f in (grouped.get("company", []) + grouped.get("company_identity", [])) if f.verification_status == "reported"]
     if company_facts:
         lines = [f"{f.field_name}: {f.value}" for f in company_facts[:6]]
         paragraphs.append(f"**Company Profile & Operations:** {name} is evidenced across public sources with the following core operations:\n" + "\n".join(f"• {line}" for line in lines))
 
     # 2. Financial & Leadership
-    fin_facts = [f for f in grouped.get("financial", []) if f.verification_status == "reported"]
-    lead_facts = [f for f in grouped.get("leadership", []) if f.verification_status == "reported"]
+    fin_facts = [f for f in (grouped.get("financial", []) + grouped.get("financial_research", [])) if f.verification_status == "reported"]
+    lead_facts = [f for f in (grouped.get("leadership", []) + grouped.get("leadership_intelligence", [])) if f.verification_status == "reported"]
     fin_lead_lines = []
     if lead_facts:
         fin_lead_lines.append(f"Key Leadership: {', '.join(f'{f.field_name} ({f.value})' for f in lead_facts[:4])}")
@@ -187,8 +228,8 @@ def _format_executive_brief(company_name: str, grouped: dict[str, list[ResearchF
         paragraphs.append(f"**Leadership & Financial Overview:**\n" + "\n".join(f"• {line}" for line in fin_lead_lines))
 
     # 3. Market, Signals & News
-    signals = [f for f in grouped.get("signals", []) if f.verification_status == "reported"]
-    news = [f for f in grouped.get("news", []) if f.verification_status == "reported"]
+    signals = [f for f in (grouped.get("signals", []) + grouped.get("pain_points_opportunities", [])) if f.verification_status == "reported"]
+    news = [f for f in (grouped.get("news", []) + grouped.get("news_developments", [])) if f.verification_status == "reported"]
     sig_lines = []
     if news:
         sig_lines.append(f"Recent Announcements: {', '.join(f'{f.field_name} ({f.value})' for f in news[:3])}")
@@ -215,8 +256,7 @@ def _generate_report_narratives(company_name: str, profile_arn: str | None,
         "Based ONLY on the provided verified company facts, generate an executive company brief. "
         "Return JSON with: "
         "- 'summary': A comprehensive 2-3 paragraph executive summary of the company, covering what they do, their industry presence, operational scale/infrastructure/fleet, key leadership, and strategic direction. "
-        "- 'section_narratives': An object mapping category keys ('company', 'news', 'financial', 'funding', 'leadership', 'competitors', 'signals') "
-        "to a well-written 1-2 paragraph narrative briefing for that category explaining the facts in professional prose. "
+        "- 'section_narratives': An object mapping category keys to a well-written 1-2 paragraph narrative briefing for that category explaining the facts in professional prose. "
         "Only state facts directly evidenced in the provided data. Do not fabricate or extrapolate unsupported claims. "
         "If a category has no facts, its narrative should be 'Not available from the retrieved public sources.'"
     )
@@ -226,7 +266,7 @@ def _generate_report_narratives(company_name: str, profile_arn: str | None,
     }
     try:
         from app import bedrock
-        parsed = bedrock.converse_json(instruction, payload, model_id=model_id, max_tokens=4000)
+        parsed = bedrock.converse_json(instruction, payload, model_id=profile_arn or None, max_tokens=4000)
         summary = parsed.get("summary") or ""
         narratives = parsed.get("section_narratives") or {}
         if isinstance(summary, str) and summary.strip() and isinstance(narratives, dict):
@@ -240,10 +280,12 @@ def _synthesize_report(job_id: str, company_id: str, limitations: list[str],
                        company_name: str = "", profile_arn: str | None = None) -> ResearchReport:
     with SessionLocal.begin() as session:
         job = session.get(ResearchJob, job_id)
-        if not company_name:
-            comp = session.get(CompanyResearchProfile, company_id)
-            if comp:
+        domain = ""
+        comp = session.get(CompanyResearchProfile, company_id)
+        if comp:
+            if not company_name:
                 company_name = comp.company_name
+            domain = comp.domain
         facts = session.scalars(select(ResearchFact).where(
             ResearchFact.job_id == job_id
         ).order_by(ResearchFact.category, ResearchFact.field_name)).all()
@@ -256,6 +298,48 @@ def _synthesize_report(job_id: str, company_id: str, limitations: list[str],
             valid_items = [f for f in items if f.verification_status in {"reported", "conflicting"}]
             if valid_items:
                 facts_dict[category] = [{"field_name": f.field_name, "value": f.value} for f in valid_items]
+
+        # 1. Strategic Research Analysis Engine
+        strategic_analysis = generate_strategic_analysis(
+            company_name=company_name,
+            domain=domain,
+            facts=facts,
+            profile_arn=profile_arn,
+        )
+
+        # 2. DENSO Product Opportunity Engine (IM, MCE, VDI, TWMS)
+        product_opportunities = evaluate_product_opportunities(
+            company_name=company_name,
+            domain=domain,
+            facts=facts,
+            profile_arn=profile_arn,
+        )
+
+        # 3. 1-Page Executive Summary
+        one_page_summary = generate_one_page_summary(
+            company_name=company_name,
+            domain=domain,
+            facts=facts,
+            analysis=strategic_analysis,
+            product_opportunities=product_opportunities,
+        )
+
+        # 4. What Changed Since Last Research Run
+        previous_job = session.scalar(select(ResearchJob).where(
+            ResearchJob.company_id == company_id,
+            ResearchJob.id != job_id,
+            ResearchJob.status.in_(("completed", "partial")),
+        ).order_by(ResearchJob.created_at.desc()))
+        previous_facts = []
+        if previous_job:
+            previous_facts = session.scalars(select(ResearchFact).where(
+                ResearchFact.job_id == previous_job.id
+            )).all()
+        what_changed = detect_research_changes(
+            current_facts=facts,
+            previous_facts=previous_facts,
+            company_name=company_name,
+        )
 
         executive_summary, narratives = _generate_report_narratives(company_name, profile_arn, facts_dict)
 
@@ -288,7 +372,7 @@ def _synthesize_report(job_id: str, company_id: str, limitations: list[str],
 
             sections.append({
                 "category": category,
-                "title": TITLES[category],
+                "title": TITLES.get(category, category.replace("_", " ").title()),
                 "status": "available" if items else "not_available",
                 "fact_ids": fact_ids,
                 "text": text,
@@ -301,11 +385,10 @@ def _synthesize_report(job_id: str, company_id: str, limitations: list[str],
         if not limitations:
             limitations.append(
                 "Research used bounded discovery across the official site, sitemaps, feeds, "
-                "outbound references and public indexes; coverage is not comprehensive."
+                "outbound references, statutory filings, documents and public indexes; coverage is not comprehensive."
             )
         limitations.append(
-            "No external search API provider is used. Discovered URLs are leads; only retrieved "
-            "page content supports reported facts."
+            "Discovered URLs are leads; only retrieved page and document content supports reported facts."
         )
         limitations.extend([
             ("Text-only browser fallback omits styles and allows only public same-site GET resources; external "
@@ -321,6 +404,10 @@ def _synthesize_report(job_id: str, company_id: str, limitations: list[str],
         report = ResearchReport(
             company_id=company_id, job_id=job_id, version=version,
             summary=summary, sections=sections, limitations=list(dict.fromkeys(limitations)),
+            one_page_summary=one_page_summary,
+            analysis_data=strategic_analysis,
+            product_opportunities=product_opportunities,
+            what_changed=what_changed,
         )
         session.add(report)
         session.flush()
@@ -435,12 +522,13 @@ def run_research_job(job_id: str) -> dict:
             return {"status": "cancelled"}
         job.pages_processed = pages_count
         job.sources_count = len(sources)
+        job.documents_analyzed = sum(1 for s in sources if getattr(s, "is_document", False))
         if errors or limitations:
             job.error = "; ".join(errors + limitations[:4])[:1000]
 
-    selected_categories = RESEARCH_CATEGORIES if depth == "comprehensive" else (
-        "company", "news", "leadership", "signals"
-    )
+    selected_categories = set(RESEARCH_CATEGORIES) if depth == "comprehensive" else {
+        "company", "news", "leadership", "signals", "financial",
+    }
     work = []
     for agent in RESEARCH_CATEGORIES:
         with SessionLocal() as session:

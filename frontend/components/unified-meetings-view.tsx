@@ -78,8 +78,14 @@ export default function UnifiedMeetingsView({
   const [createDescription, setCreateDescription] = useState("");
   const [createStart, setCreateStart] = useState("");
   const [createEnd, setCreateEnd] = useState("");
+  const [createDuration, setCreateDuration] = useState<number>(30);
   const [createEmails, setCreateEmails] = useState("");
   const [createdJoinUrl, setCreatedJoinUrl] = useState<string | null>(null);
+
+  // Clipboard Feedback State
+  const [copiedMoM, setCopiedMoM] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedEmailDraft, setCopiedEmailDraft] = useState(false);
 
   // Lead Contacts & Participant Picker State
   const [leadsList, setLeadsList] = useState<LeadOption[]>([]);
@@ -107,6 +113,7 @@ export default function UnifiedMeetingsView({
   const [showRescheduleModal, setShowRescheduleModal] = useState(false);
   const [rescheduleStart, setRescheduleStart] = useState("");
   const [rescheduleEnd, setRescheduleEnd] = useState("");
+  const [rescheduleDuration, setRescheduleDuration] = useState<number>(30);
   const [rescheduleNote, setRescheduleNote] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
 
@@ -157,6 +164,20 @@ export default function UnifiedMeetingsView({
           if (detail.analysis) {
             setFollowupSubject(detail.analysis.followup_draft_subject || `Follow-up: ${detail.title}`);
             setFollowupBody(detail.analysis.followup_draft_body || "");
+          } else {
+            // Automatically trigger AI meeting analysis in background so sales reps never have to click
+            analyzeMeeting(selectedMeetingId)
+              .then((analyzed) => {
+                if (!cancelled) {
+                  setMeetingDetail(analyzed);
+                  if (analyzed.analysis) {
+                    setFollowupSubject(analyzed.analysis.followup_draft_subject || `Follow-up: ${analyzed.title}`);
+                    setFollowupBody(analyzed.analysis.followup_draft_body || "");
+                  }
+                  loadData();
+                }
+              })
+              .catch(() => {});
           }
           if (detail.participants && detail.participants.length > 0) {
             const prospect = detail.participants.find((p) => p.participant_role !== "organizer");
@@ -258,10 +279,84 @@ export default function UnifiedMeetingsView({
     return leadsList.find((l) => l.id === selectedLeadFilter);
   }, [leadsList, selectedLeadFilter]);
 
+  // Duration & End-Time Calculator Helpers
+  const calculateEndTime = (startStr: string, minutes: number): string => {
+    if (!startStr) return "";
+    const startDate = new Date(startStr);
+    if (isNaN(startDate.getTime())) return "";
+    const endDate = new Date(startDate.getTime() + minutes * 60000);
+    const offset = endDate.getTimezoneOffset() * 60000;
+    return new Date(endDate.getTime() - offset).toISOString().slice(0, 16);
+  };
+
+  const handleSelectCreateDuration = (minutes: number) => {
+    setCreateDuration(minutes);
+    if (createStart) {
+      setCreateEnd(calculateEndTime(createStart, minutes));
+    }
+  };
+
+  const handleCreateStartChange = (val: string) => {
+    setCreateStart(val);
+    if (val && createDuration > 0) {
+      setCreateEnd(calculateEndTime(val, createDuration));
+    }
+  };
+
+  const handleCreateEndChange = (val: string) => {
+    setCreateEnd(val);
+    if (createStart && val) {
+      const diff = Math.round((new Date(val).getTime() - new Date(createStart).getTime()) / 60000);
+      if (diff > 0) {
+        setCreateDuration(diff);
+      }
+    }
+  };
+
+  const handleSelectRescheduleDuration = (minutes: number) => {
+    setRescheduleDuration(minutes);
+    if (rescheduleStart) {
+      setRescheduleEnd(calculateEndTime(rescheduleStart, minutes));
+    }
+  };
+
+  const handleRescheduleStartChange = (val: string) => {
+    setRescheduleStart(val);
+    if (val && rescheduleDuration > 0) {
+      setRescheduleEnd(calculateEndTime(val, rescheduleDuration));
+    }
+  };
+
+  const handleRescheduleEndChange = (val: string) => {
+    setRescheduleEnd(val);
+    if (rescheduleStart && val) {
+      const diff = Math.round((new Date(val).getTime() - new Date(rescheduleStart).getTime()) / 60000);
+      if (diff > 0) {
+        setRescheduleDuration(diff);
+      }
+    }
+  };
+
+  const copyToClipboard = (text: string, type: "mom" | "link" | "email") => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    if (type === "mom") {
+      setCopiedMoM(true);
+      setTimeout(() => setCopiedMoM(false), 2500);
+    } else if (type === "link") {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    } else if (type === "email") {
+      setCopiedEmailDraft(true);
+      setTimeout(() => setCopiedEmailDraft(false), 2500);
+    }
+  };
+
   // Default datetimes for modal
   const openModal = () => {
+    const dur = createDuration || 30;
     const start = new Date(Date.now() + 15 * 60000);
-    const end = new Date(start.getTime() + 30 * 60000);
+    const end = new Date(start.getTime() + dur * 60000);
     const offset = start.getTimezoneOffset() * 60000;
     setCreateStart(new Date(start.getTime() - offset).toISOString().slice(0, 16));
     setCreateEnd(new Date(end.getTime() - offset).toISOString().slice(0, 16));
@@ -693,43 +788,104 @@ export default function UnifiedMeetingsView({
         />
       </div>
 
-      {/* Main Grid: Meetings List + Selected Detail Drawer */}
-      <div style={{ display: "grid", gridTemplateColumns: selectedMeetingId ? "1fr 1.3fr" : "1fr", gap: 24, alignItems: "start" }}>
-        {/* Meetings List */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {loading ? (
-            <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Loading meetings…</div>
-          ) : meetings.length === 0 ? (
-            <div style={{ padding: 48, textAlign: "center", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12 }}>
-              <UiIcon name="calendar" size={32} />
-              <h3 style={{ margin: "12px 0 4px" }}>No meetings found</h3>
-              <p style={{ color: "var(--muted)", margin: 0 }}>Schedule an outreach meeting or create an instant link above.</p>
+      {/* Optional Lead Executive Briefing Banner if embedded in Lead 360 */}
+      {leadId && meetings.some((m) => m.has_analysis) && (
+        <div
+          style={{
+            background: "linear-gradient(135deg, #fef2f2 0%, #fff1f2 100%)",
+            border: "1px solid #fecaca",
+            borderRadius: 12,
+            padding: "16px 20px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 11, background: "var(--red)", color: "#fff", padding: "2px 8px", borderRadius: 12, fontWeight: 700, textTransform: "uppercase" }}>
+                Lead Intelligence
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#991b1b" }}>
+                Executive Meeting Minutes &amp; Takeaways Ready
+              </span>
             </div>
-          ) : (
-            meetings.map((m) => {
-              const isSelected = selectedMeetingId === m.id;
-              const isTeams = m.provider === "teams";
+            <p style={{ margin: 0, fontSize: 13, color: "#475569" }}>
+              Click any analyzed discussion below to expand the full MoM, customer requirements, pain points, and action items.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const firstAnalyzed = meetings.find((m) => m.has_analysis);
+              if (firstAnalyzed) setSelectedMeetingId(firstAnalyzed.id);
+            }}
+            style={{
+              background: "var(--red)",
+              color: "#fff",
+              border: "none",
+              padding: "8px 16px",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            📋 Open Latest MoM
+          </button>
+        </div>
+      )}
 
-              return (
+      {/* Full-Width Meetings List with Inline Expandable MoM Under Each Meet */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: "center", color: "var(--muted)", background: "var(--surface)", borderRadius: 12, border: "1px solid var(--border)" }}>
+            Loading meetings…
+          </div>
+        ) : meetings.length === 0 ? (
+          <div style={{ padding: 48, textAlign: "center", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12 }}>
+            <UiIcon name="calendar" size={32} />
+            <h3 style={{ margin: "12px 0 4px" }}>No meetings found</h3>
+            <p style={{ color: "var(--muted)", margin: 0 }}>Schedule an outreach meeting or create an instant link above.</p>
+          </div>
+        ) : (
+          meetings.map((m) => {
+            const isSelected = selectedMeetingId === m.id;
+            const isTeams = m.provider === "teams";
+            const durationMinutes = m.scheduled_start && m.scheduled_end
+              ? Math.max(1, Math.round((new Date(m.scheduled_end).getTime() - new Date(m.scheduled_start).getTime()) / 60000))
+              : null;
+
+            return (
+              <div
+                key={m.id}
+                style={{
+                  background: "#ffffff",
+                  border: `1px solid ${isSelected ? "var(--red)" : "var(--border)"}`,
+                  borderLeft: isSelected ? "4px solid var(--red)" : "1px solid var(--border)",
+                  borderRadius: 10,
+                  boxShadow: isSelected ? "0 8px 20px -4px rgba(210, 15, 50, 0.12)" : "var(--shadow-sm)",
+                  transition: "all 0.15s ease",
+                  overflow: "hidden",
+                }}
+              >
+                {/* Meeting Card Header Row (Click to toggle MoM inline under this meet) */}
                 <div
-                  key={m.id}
-                  onClick={() => setSelectedMeetingId(m.id)}
+                  onClick={() => setSelectedMeetingId(isSelected ? null : m.id)}
                   style={{
-                    background: "var(--surface)",
-                    border: `1px solid ${isSelected ? "var(--red)" : "var(--border)"}`,
-                    borderRadius: 10,
                     padding: 16,
                     cursor: "pointer",
-                    boxShadow: isSelected ? "var(--shadow-md)" : "var(--shadow-sm)",
-                    transition: "all 0.15s ease",
+                    background: isSelected ? "rgba(210, 15, 50, 0.02)" : "#ffffff",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
                     <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
                         <span
                           style={{
-                            padding: "2px 6px",
+                            padding: "2px 8px",
                             borderRadius: 4,
                             fontSize: 11,
                             fontWeight: 700,
@@ -737,18 +893,23 @@ export default function UnifiedMeetingsView({
                             color: isTeams ? "#4f46e5" : "#059669",
                           }}
                         >
-                          {isTeams ? "Teams" : "Meet"}
+                          {isTeams ? "Teams" : "Google Meet"}
                         </span>
-                        <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase" }}>
+                        <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", fontWeight: 600 }}>
                           {m.meeting_type}
                         </span>
+                        {durationMinutes && (
+                          <span style={{ fontSize: 11, background: "#f1f5f9", padding: "1px 6px", borderRadius: 4, color: "#334155", fontWeight: 600 }}>
+                            ⏱ {durationMinutes >= 60 ? (durationMinutes % 60 === 0 ? `${durationMinutes / 60}h` : `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`) : `${durationMinutes}m`}
+                          </span>
+                        )}
                         {m.company_name && (
-                          <span style={{ fontSize: 12, fontWeight: 600, color: "#1e293b" }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "#1e293b" }}>
                             {m.company_name}
                           </span>
                         )}
                       </div>
-                      <h4 style={{ margin: "2px 0 6px", fontSize: 15, color: "#0f172a" }}>{m.title}</h4>
+                      <h4 style={{ margin: "2px 0 6px", fontSize: 16, color: "#0f172a", fontWeight: 600 }}>{m.title}</h4>
                       <p style={{ margin: 0, fontSize: 12, color: "var(--muted)" }}>
                         {m.scheduled_start
                           ? new Date(m.scheduled_start).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
@@ -756,549 +917,735 @@ export default function UnifiedMeetingsView({
                       </p>
                     </div>
 
-                    <span
-                      style={{
-                        padding: "3px 8px",
-                        borderRadius: 12,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        background: m.status === "completed" ? "#ecfdf5" : m.status === "in_progress" ? "#eff6ff" : "#fffbeb",
-                        color: m.status === "completed" ? "#065f46" : m.status === "in_progress" ? "#1e40af" : "#92400e",
-                        border: `1px solid ${m.status === "completed" ? "#a7f3d0" : m.status === "in_progress" ? "#bfdbfe" : "#fde68a"}`,
-                      }}
-                    >
-                      {m.status}
-                    </span>
-                  </div>
-
-                  {/* Artifact Indicators */}
-                  <div style={{ display: "flex", gap: 10, marginTop: 12, paddingTop: 10, borderTop: "1px solid #f1f5f9", fontSize: 12 }}>
-                    <span style={{ color: m.has_recording ? "#059669" : "#94a3b8" }}>
-                      🎥 {m.has_recording ? "Recording available" : "No recording"}
-                    </span>
-                    <span style={{ color: m.has_transcript ? "#4f46e5" : "#94a3b8" }}>
-                      📝 {m.has_transcript ? "Transcript synced" : "No transcript"}
-                    </span>
-                    <span style={{ color: m.has_analysis ? "#d20f32" : "#94a3b8" }}>
-                      🧠 {m.has_analysis ? "AI Analyzed" : "Not analyzed"}
-                    </span>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        {/* Selected Meeting Details Drawer / Panel */}
-        {selectedMeetingId && (
-          <div
-            style={{
-              background: "var(--surface)",
-              border: "1px solid var(--border)",
-              borderRadius: 12,
-              padding: 24,
-              boxShadow: "var(--shadow-md)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 20,
-            }}
-          >
-            {detailLoading || !meetingDetail ? (
-              <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Loading meeting details…</div>
-            ) : (
-              <>
-                {/* Detail Header */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, borderBottom: "1px solid var(--border)", paddingBottom: 16 }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <span
                         style={{
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          background: meetingDetail.provider === "teams" ? "#ede9fe" : "#d1fae5",
-                          color: meetingDetail.provider === "teams" ? "#4f46e5" : "#059669",
-                        }}
-                      >
-                        {meetingDetail.provider === "teams" ? "Microsoft Teams" : "Google Meet"}
-                      </span>
-                      <span
-                        style={{
-                          padding: "2px 8px",
-                          borderRadius: 4,
+                          padding: "4px 10px",
+                          borderRadius: 12,
                           fontSize: 11,
                           fontWeight: 700,
-                          background: meetingDetail.status === "cancelled" ? "#fee2e2" : meetingDetail.status === "completed" ? "#dcfce7" : meetingDetail.status === "in_progress" ? "#fef3c7" : "#dbeafe",
-                          color: meetingDetail.status === "cancelled" ? "#991b1b" : meetingDetail.status === "completed" ? "#166534" : meetingDetail.status === "in_progress" ? "#92400e" : "#1e40af",
+                          background: m.status === "completed" ? "#ecfdf5" : m.status === "in_progress" ? "#eff6ff" : m.status === "cancelled" ? "#fee2e2" : "#fffbeb",
+                          color: m.status === "completed" ? "#065f46" : m.status === "in_progress" ? "#1e40af" : m.status === "cancelled" ? "#991b1b" : "#92400e",
+                          border: `1px solid ${m.status === "completed" ? "#a7f3d0" : m.status === "in_progress" ? "#bfdbfe" : m.status === "cancelled" ? "#fecaca" : "#fde68a"}`,
+                          textTransform: "capitalize",
                         }}
                       >
-                        {meetingDetail.status.toUpperCase()}
+                        {m.status.replace("_", " ")}
                       </span>
-                      <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                        ID: {meetingDetail.external_meeting_id || meetingDetail.id.slice(0, 8)}
-                      </span>
-                    </div>
-                    <h2 style={{ margin: "4px 0 8px", fontSize: 20 }}>{meetingDetail.title}</h2>
-                    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, fontSize: 13, color: "var(--muted)" }}>
-                      {meetingDetail.scheduled_start && (
-                        <span>📅 {new Date(meetingDetail.scheduled_start).toLocaleString()}</span>
-                      )}
-                      {meetingDetail.lead_id && (
-                        <Link
-                          href={`/leads/${meetingDetail.lead_id}`}
-                          style={{ color: "var(--red)", fontWeight: 600 }}
-                        >
-                          View Lead 360: {meetingDetail.company_name || "Associated Lead"} →
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setSelectedMeetingId(null)}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: 18 }}
-                  >
-                    ✕
-                  </button>
-                </div>
 
-                {/* Quick Actions (Join, Sync, Analyze) */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                  <a
-                    href={meetingDetail.join_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      background: "#059669",
-                      color: "#fff",
-                      padding: "8px 14px",
-                      borderRadius: 6,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      textDecoration: "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <UiIcon name="external" size={14} /> Join Meeting
-                  </a>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(meetingDetail.join_url);
-                      setSuccessMsg("Meeting join URL copied to clipboard!");
-                    }}
-                    style={{
-                      background: "#fff",
-                      border: "1px solid var(--border)",
-                      color: "#334155",
-                      padding: "8px 14px",
-                      borderRadius: 6,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Copy Link
-                  </button>
-                  <button
-                    disabled={actionLoading}
-                    onClick={() => handleSendInvites(meetingDetail.id)}
-                    style={{
-                      background: "#fff",
-                      border: "1px solid var(--border)",
-                      color: "#0284c7",
-                      padding: "8px 14px",
-                      borderRadius: 6,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <UiIcon name="mail" size={14} /> Send / Resend Invites
-                  </button>
-                  <button
-                    disabled={actionLoading}
-                    onClick={() => handleSyncArtifacts(meetingDetail.id)}
-                    style={{
-                      background: "#fff",
-                      border: "1px solid var(--border)",
-                      color: "#4f46e5",
-                      padding: "8px 14px",
-                      borderRadius: 6,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    🔄 Sync Artifacts
-                  </button>
-                  <button
-                    disabled={actionLoading}
-                    onClick={() => handleAnalyzeMeeting(meetingDetail.id)}
-                    style={{
-                      background: "var(--red)",
-                      color: "#fff",
-                      border: "none",
-                      padding: "8px 14px",
-                      borderRadius: 6,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    ✨ Run AI Meeting Intelligence
-                  </button>
-
-                  {meetingDetail.status !== "cancelled" ? (
-                    <>
-                      <button
-                        onClick={() => {
-                          setRescheduleStart(
-                            meetingDetail.scheduled_start
-                              ? new Date(meetingDetail.scheduled_start).toISOString().slice(0, 16)
-                              : new Date().toISOString().slice(0, 16)
-                          );
-                          setRescheduleEnd(
-                            meetingDetail.scheduled_end
-                              ? new Date(meetingDetail.scheduled_end).toISOString().slice(0, 16)
-                              : ""
-                          );
-                          setShowRescheduleModal(true);
-                        }}
+                      {/* Expand / Collapse Pill */}
+                      <span
                         style={{
-                          background: "#fff",
-                          border: "1px solid #cbd5e1",
-                          color: "#b45309",
-                          padding: "8px 14px",
-                          borderRadius: 6,
-                          fontSize: 13,
-                          fontWeight: 600,
-                          cursor: "pointer",
                           display: "inline-flex",
                           alignItems: "center",
-                          gap: 6,
-                        }}
-                      >
-                        <UiIcon name="calendar" size={14} /> Postpone / Reschedule
-                      </button>
-                      <button
-                        onClick={() => setShowCancelModal(true)}
-                        style={{
-                          background: "#fff",
-                          border: "1px solid #fecaca",
-                          color: "#dc2626",
-                          padding: "8px 14px",
+                          gap: 4,
+                          padding: "4px 10px",
                           borderRadius: 6,
-                          fontSize: 13,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        ✕ Cancel Meeting
-                      </button>
-                    </>
-                  ) : (
-                    <div style={{ background: "#fee2e2", color: "#991b1b", padding: "8px 14px", borderRadius: 6, fontSize: 13, fontWeight: 600 }}>
-                      Meeting Cancelled
-                    </div>
-                  )}
-                </div>
-
-                {/* Participants */}
-                <div>
-                  <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Participants ({meetingDetail.participants.length})</h4>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {meetingDetail.participants.map((p) => (
-                      <div
-                        key={p.id}
-                        style={{
-                          background: "#f8fafc",
-                          border: "1px solid #e2e8f0",
-                          borderRadius: 6,
-                          padding: "6px 10px",
                           fontSize: 12,
+                          fontWeight: 600,
+                          background: isSelected ? "var(--red)" : "#f1f5f9",
+                          color: isSelected ? "#ffffff" : "#475569",
+                          border: `1px solid ${isSelected ? "var(--red)" : "#cbd5e1"}`,
+                          transition: "all 0.15s ease",
                         }}
                       >
-                        <strong>{p.display_name || p.email}</strong> ({p.participant_role})
-                      </div>
-                    ))}
+                        {isSelected ? "▲ Fold MoM" : "▼ MoM & Details"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Artifact Indicators Bar */}
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 12, paddingTop: 10, borderTop: "1px solid #f1f5f9", fontSize: 12 }}>
+                    <span style={{ color: m.has_recording ? "#059669" : "#94a3b8", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      🎥 {m.has_recording ? "Recording available" : "No recording"}
+                    </span>
+                    <span style={{ color: m.has_transcript ? "#4f46e5" : "#94a3b8", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      📝 {m.has_transcript ? "Transcript synced" : "No transcript"}
+                    </span>
+                    <span style={{ color: m.has_analysis ? "var(--red)" : "#94a3b8", fontWeight: m.has_analysis ? 700 : 400, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                      📋 {m.has_analysis ? "MoM & Takeaways Ready" : "MoM Pending"}
+                    </span>
+                    {m.action_items_count > 0 && (
+                      <span style={{ color: "#0284c7", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        ✅ {m.action_items_count} Action {m.action_items_count === 1 ? "Item" : "Items"}
+                      </span>
+                    )}
+                    <span style={{ marginLeft: "auto", color: isSelected ? "var(--red)" : "var(--muted)", fontWeight: 500, fontSize: 11 }}>
+                      {isSelected ? "Click to fold ↑" : "Click to view MoM & key discussion points ↓"}
+                    </span>
                   </div>
                 </div>
 
-                {/* AI Executive Summary & MoM */}
-                {meetingDetail.analysis ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b", textTransform: "uppercase" }}>
-                        🧠 Amazon Bedrock Meeting Intelligence
-                      </span>
-                      <span style={{ fontSize: 11, background: "#ede9fe", color: "#6b21a8", padding: "2px 8px", borderRadius: 12, fontWeight: 600 }}>
-                        Confidence: {Math.round((meetingDetail.analysis.confidence || 0.85) * 100)}%
-                      </span>
-                    </div>
-
-                    <div>
-                      <h5 style={{ margin: "0 0 4px", fontSize: 13 }}>Executive Summary</h5>
-                      <p style={{ margin: 0, fontSize: 13, color: "#334155", lineHeight: 1.5 }}>
-                        {meetingDetail.analysis.executive_summary}
-                      </p>
-                    </div>
-
-                    {meetingDetail.analysis.customer_requirements.length > 0 && (
-                      <div>
-                        <h5 style={{ margin: "0 0 4px", fontSize: 13, color: "#065f46" }}>Customer Requirements</h5>
-                        <ul style={{ margin: "0 0 0 16px", padding: 0, fontSize: 12, color: "#334155" }}>
-                          {meetingDetail.analysis.customer_requirements.map((req, i) => (
-                            <li key={i}>{req}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {meetingDetail.analysis.customer_pain_points.length > 0 && (
-                      <div>
-                        <h5 style={{ margin: "0 0 4px", fontSize: 13, color: "#991b1b" }}>Pain Points</h5>
-                        <ul style={{ margin: "0 0 0 16px", padding: 0, fontSize: 12, color: "#334155" }}>
-                          {meetingDetail.analysis.customer_pain_points.map((p, i) => (
-                            <li key={i}>{p}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {meetingDetail.analysis.meeting_minutes && (
-                      <div>
-                        <h5 style={{ margin: "0 0 4px", fontSize: 13 }}>Minutes of Meeting (MoM)</h5>
-                        <div style={{ maxHeight: 160, overflowY: "auto", background: "#fff", border: "1px solid #cbd5e1", borderRadius: 6, padding: 10, fontSize: 12, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>
-                          {meetingDetail.analysis.meeting_minutes}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ background: "#f8fafc", padding: 16, borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, color: "var(--muted)", textAlign: "center" }}>
-                    {meetingDetail.status === "cancelled" ? (
-                      <span style={{ color: "#991b1b", fontWeight: 600 }}>This meeting was cancelled. Cancellation emails were dispatched to attendees.</span>
-                    ) : meetingDetail.status === "scheduled" ? (
-                      <div>
-                        <div style={{ fontWeight: 600, color: "#1e293b", marginBottom: 4 }}>
-                          📅 Scheduled for {meetingDetail.scheduled_start ? new Date(meetingDetail.scheduled_start).toLocaleString() : "Upcoming call"}
-                        </div>
-                        <div style={{ fontSize: 12 }}>
-                          Once the meeting takes place, the transcript, MoM, and AI action items will automatically appear here.
-                        </div>
+                {/* INLINE EXPANDED MOM & MEETING INTELLIGENCE PANEL */}
+                {isSelected && (
+                  <div
+                    style={{
+                      borderTop: "1px solid var(--border)",
+                      padding: "20px 22px 24px",
+                      background: "#f8fafc",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 20,
+                    }}
+                  >
+                    {detailLoading || !meetingDetail || meetingDetail.id !== m.id ? (
+                      <div style={{ padding: "36px 0", textAlign: "center", color: "var(--muted)" }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Loading MoM &amp; meeting details…</div>
+                        <div style={{ fontSize: 12 }}>Retrieving Amazon Bedrock intelligence, transcripts, and action items</div>
                       </div>
                     ) : (
-                      <div>
-                        No AI intelligence generated yet. Click &quot;✨ Run AI Meeting Intelligence&quot; or paste notes below.
-                      </div>
+                      <>
+                        {/* Control Bar: Join, Sync, Run AI MoM, Reschedule, Cancel, Fold */}
+                        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, paddingBottom: 14, borderBottom: "1px solid #e2e8f0" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+                            {meetingDetail.join_url && (
+                              <a
+                                href={meetingDetail.join_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  background: "#059669",
+                                  color: "#fff",
+                                  padding: "7px 14px",
+                                  borderRadius: 6,
+                                  fontSize: 13,
+                                  fontWeight: 600,
+                                  textDecoration: "none",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                }}
+                              >
+                                <UiIcon name="external" size={14} /> Join Meeting
+                              </a>
+                            )}
+                            {meetingDetail.join_url && (
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(meetingDetail.join_url, "link")}
+                                style={{
+                                  background: "#fff",
+                                  border: "1px solid var(--border)",
+                                  color: "#334155",
+                                  padding: "7px 12px",
+                                  borderRadius: 6,
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {copiedLink ? "✓ Link Copied!" : "📋 Copy Link"}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={actionLoading}
+                              onClick={() => handleSendInvites(meetingDetail.id)}
+                              style={{
+                                background: "#fff",
+                                border: "1px solid var(--border)",
+                                color: "#0284c7",
+                                padding: "7px 12px",
+                                borderRadius: 6,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 5,
+                              }}
+                            >
+                              <UiIcon name="mail" size={14} /> Send / Resend Invites
+                            </button>
+                            <button
+                              type="button"
+                              disabled={actionLoading}
+                              onClick={() => handleSyncArtifacts(meetingDetail.id)}
+                              style={{
+                                background: "#fff",
+                                border: "1px solid var(--border)",
+                                color: "#4f46e5",
+                                padding: "7px 12px",
+                                borderRadius: 6,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: "pointer",
+                              }}
+                            >
+                              🔄 Sync Artifacts
+                            </button>
+                            <button
+                              type="button"
+                              disabled={actionLoading}
+                              onClick={() => handleAnalyzeMeeting(meetingDetail.id)}
+                              style={{
+                                background: "#fff",
+                                border: "1px solid #cbd5e1",
+                                color: "#334155",
+                                padding: "7px 12px",
+                                borderRadius: 6,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                              title="Re-run Bedrock AI analysis to refresh highlights and MoM"
+                            >
+                              🔄 {actionLoading ? "Analyzing…" : "Refresh AI MoM"}
+                            </button>
+                          </div>
+
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            {meetingDetail.status !== "cancelled" && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const startStr = meetingDetail.scheduled_start
+                                      ? new Date(meetingDetail.scheduled_start).toISOString().slice(0, 16)
+                                      : new Date().toISOString().slice(0, 16);
+                                    setRescheduleStart(startStr);
+                                    const dur = (meetingDetail.scheduled_start && meetingDetail.scheduled_end)
+                                      ? Math.round((new Date(meetingDetail.scheduled_end).getTime() - new Date(meetingDetail.scheduled_start).getTime()) / 60000)
+                                      : 30;
+                                    setRescheduleDuration(dur > 0 ? dur : 30);
+                                    setRescheduleEnd(
+                                      meetingDetail.scheduled_end
+                                        ? new Date(meetingDetail.scheduled_end).toISOString().slice(0, 16)
+                                        : calculateEndTime(startStr, dur > 0 ? dur : 30)
+                                    );
+                                    setShowRescheduleModal(true);
+                                  }}
+                                  style={{
+                                    background: "#fff",
+                                    border: "1px solid #cbd5e1",
+                                    color: "#b45309",
+                                    padding: "7px 12px",
+                                    borderRadius: 6,
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 5,
+                                  }}
+                                >
+                                  <UiIcon name="calendar" size={13} /> Reschedule
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowCancelModal(true)}
+                                  style={{
+                                    background: "#fff",
+                                    border: "1px solid #fecaca",
+                                    color: "#dc2626",
+                                    padding: "7px 12px",
+                                    borderRadius: 6,
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  ✕ Cancel
+                                </button>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMeetingId(null)}
+                              style={{
+                                background: "#ffffff",
+                                border: "1px solid var(--border)",
+                                color: "var(--muted)",
+                                padding: "6px 12px",
+                                borderRadius: 6,
+                                fontSize: 12,
+                                cursor: "pointer",
+                                fontWeight: 600,
+                              }}
+                            >
+                              ▲ Fold
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Attendees List */}
+                        {meetingDetail.participants && meetingDetail.participants.length > 0 && (
+                          <div>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px", display: "block", marginBottom: 6 }}>
+                              Meeting Attendees ({meetingDetail.participants.length})
+                            </span>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              {meetingDetail.participants.map((p) => (
+                                <div
+                                  key={p.id}
+                                  style={{
+                                    background: "#ffffff",
+                                    border: "1px solid #e2e8f0",
+                                    borderRadius: 6,
+                                    padding: "4px 10px",
+                                    fontSize: 12,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                  }}
+                                >
+                                  <span style={{ fontWeight: 600, color: "#1e293b" }}>{p.display_name || p.email}</span>
+                                  <span style={{ fontSize: 10, background: p.participant_role === "organizer" ? "#e0e7ff" : "#f1f5f9", color: p.participant_role === "organizer" ? "#4338ca" : "#64748b", padding: "1px 5px", borderRadius: 4, textTransform: "capitalize" }}>
+                                    {p.participant_role}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Minutes of Meeting (MoM) & Executive Summary */}
+                        {meetingDetail.analysis ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                            {/* MoM Official Record Box */}
+                            <div
+                              style={{
+                                background: "#ffffff",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: 10,
+                                padding: 20,
+                                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
+                                    📋 Minutes of Meeting (MoM)
+                                  </span>
+                                  <span style={{ fontSize: 11, background: "#ede9fe", color: "#6b21a8", padding: "2px 8px", borderRadius: 12, fontWeight: 600 }}>
+                                    Amazon Bedrock AI Analysis ({Math.round((meetingDetail.analysis.confidence || 0.9) * 100)}% confidence)
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(meetingDetail.analysis?.meeting_minutes || "", "mom")}
+                                  style={{
+                                    padding: "6px 14px",
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    borderRadius: 6,
+                                    border: "1px solid #cbd5e1",
+                                    background: copiedMoM ? "#ecfdf5" : "#ffffff",
+                                    color: copiedMoM ? "#065f46" : "#334155",
+                                    cursor: "pointer",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                  }}
+                                >
+                                  {copiedMoM ? "✓ MoM Copied to Clipboard!" : "📋 Copy MoM"}
+                                </button>
+                              </div>
+
+                              {/* Executive Summary Callout */}
+                              {meetingDetail.analysis.executive_summary && (
+                                <div style={{ background: "#f8fafc", borderLeft: "4px solid var(--red)", padding: "12px 16px", borderRadius: "0 8px 8px 0", marginBottom: 16 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--red)", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 4 }}>
+                                    Executive Summary
+                                  </div>
+                                  <p style={{ margin: 0, fontSize: 13, color: "#1e293b", lineHeight: 1.6 }}>
+                                    {meetingDetail.analysis.executive_summary}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Formatted MoM Body */}
+                              {meetingDetail.analysis.meeting_minutes ? (
+                                <div>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: "#64748b", marginBottom: 6 }}>
+                                    Official Record &amp; Minutes:
+                                  </div>
+                                  <div
+                                    style={{
+                                      maxHeight: 340,
+                                      overflowY: "auto",
+                                      background: "#fbfcfd",
+                                      border: "1px solid #e2e8f0",
+                                      borderRadius: 8,
+                                      padding: 16,
+                                      fontSize: 13,
+                                      lineHeight: 1.65,
+                                      whiteSpace: "pre-wrap",
+                                      color: "#1e293b",
+                                      fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+                                    }}
+                                  >
+                                    {meetingDetail.analysis.meeting_minutes}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+
+                            {/* Important Discussion Points: Requirements, Pain Points, Decisions */}
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
+                              {/* Requirements & Key Points */}
+                              <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: 16 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: "#166534" }}>
+                                    🎯 Customer Requirements &amp; Scope
+                                  </span>
+                                  <span style={{ fontSize: 11, background: "#dcfce7", color: "#15803d", padding: "1px 6px", borderRadius: 10, fontWeight: 700 }}>
+                                    {meetingDetail.analysis.customer_requirements.length}
+                                  </span>
+                                </div>
+                                {meetingDetail.analysis.customer_requirements.length > 0 ? (
+                                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#14532d", lineHeight: 1.6 }}>
+                                    {meetingDetail.analysis.customer_requirements.map((req, i) => (
+                                      <li key={i} style={{ marginBottom: 4 }}>{req}</li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p style={{ margin: 0, fontSize: 12, color: "#166534", opacity: 0.8 }}>No specific technical requirements identified in discussion.</p>
+                                )}
+                              </div>
+
+                              {/* Customer Pain Points */}
+                              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: 16 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: "#991b1b" }}>
+                                    ⚠️ Customer Pain Points &amp; Bottlenecks
+                                  </span>
+                                  <span style={{ fontSize: 11, background: "#fee2e2", color: "#b91c1c", padding: "1px 6px", borderRadius: 10, fontWeight: 700 }}>
+                                    {meetingDetail.analysis.customer_pain_points.length}
+                                  </span>
+                                </div>
+                                {meetingDetail.analysis.customer_pain_points.length > 0 ? (
+                                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#7f1d1d", lineHeight: 1.6 }}>
+                                    {meetingDetail.analysis.customer_pain_points.map((p, i) => (
+                                      <li key={i} style={{ marginBottom: 4 }}>{p}</li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p style={{ margin: 0, fontSize: 12, color: "#991b1b", opacity: 0.8 }}>No major operational bottlenecks or pain points reported.</p>
+                                )}
+                              </div>
+
+                              {/* Agreed Decisions & Next Steps */}
+                              <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: 16 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: "#1e40af" }}>
+                                    🤝 Agreed Decisions &amp; Next Steps
+                                  </span>
+                                  <span style={{ fontSize: 11, background: "#dbeafe", color: "#1d4ed8", padding: "1px 6px", borderRadius: 10, fontWeight: 700 }}>
+                                    {(meetingDetail.analysis.decisions?.length || 0) + (meetingDetail.analysis.next_steps?.length || 0)}
+                                  </span>
+                                </div>
+                                {((meetingDetail.analysis.decisions?.length || 0) + (meetingDetail.analysis.next_steps?.length || 0)) > 0 ? (
+                                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#1e3a8a", lineHeight: 1.6 }}>
+                                    {meetingDetail.analysis.decisions?.map((d, i) => (
+                                      <li key={`dec-${i}`} style={{ marginBottom: 4 }}><strong>Decision:</strong> {d}</li>
+                                    ))}
+                                    {meetingDetail.analysis.next_steps?.map((n, i) => (
+                                      <li key={`next-${i}`} style={{ marginBottom: 4 }}><strong>Next Step:</strong> {n}</li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p style={{ margin: 0, fontSize: 12, color: "#1e40af", opacity: 0.8 }}>Follow-up milestone scheduling pending.</p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Recommended Sales Stage & Next Action */}
+                            {(meetingDetail.analysis.recommended_sales_stage || meetingDetail.analysis.recommended_next_action) && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 16, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 18px", alignItems: "center" }}>
+                                {meetingDetail.analysis.recommended_sales_stage && (
+                                  <div>
+                                    <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>
+                                      Recommended Stage:
+                                    </span>
+                                    <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 700, color: "var(--red)" }}>
+                                      {meetingDetail.analysis.recommended_sales_stage}
+                                    </span>
+                                  </div>
+                                )}
+                                {meetingDetail.analysis.recommended_next_action && (
+                                  <div style={{ borderLeft: "1px solid #e2e8f0", paddingLeft: 16 }}>
+                                    <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>
+                                      Next Recommended Action:
+                                    </span>
+                                    <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 600, color: "#0f172a" }}>
+                                      {meetingDetail.analysis.recommended_next_action}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          /* Automatic analysis loading banner */
+                          <div
+                            style={{
+                              background: "#ffffff",
+                              border: "1px dashed #cbd5e1",
+                              borderRadius: 10,
+                              padding: "36px 20px",
+                              textAlign: "center",
+                            }}
+                          >
+                            <div style={{ fontSize: 32, marginBottom: 10 }}>🧠</div>
+                            <h4 style={{ margin: "0 0 6px", fontSize: 16, color: "#0f172a", fontWeight: 700 }}>
+                              Automatically Analyzing Meeting Intelligence &amp; Generating MoM…
+                            </h4>
+                            <p style={{ margin: "0 auto 12px", fontSize: 13, color: "var(--muted)", maxWidth: 520 }}>
+                              Amazon Bedrock is synthesizing discussion points into customer requirements, operational pain points, agreed decisions, and next steps. Highlights appear automatically.
+                            </p>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--red)", fontWeight: 600 }}>
+                              <span>⚡ Auto-synthesizing insights in background…</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Action Items Checklist */}
+                        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
+                              ✅ Action Items &amp; Responsibilities ({meetingDetail.action_items.length})
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {meetingDetail.action_items.map((item) => (
+                              <div
+                                key={item.id}
+                                onClick={() => handleToggleActionItem(item)}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  padding: "8px 12px",
+                                  borderRadius: 6,
+                                  background: item.status === "completed" ? "#f8fafc" : "#ffffff",
+                                  border: `1px solid ${item.status === "completed" ? "#e2e8f0" : "#cbd5e1"}`,
+                                  cursor: "pointer",
+                                  transition: "all 0.15s ease",
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={item.status === "completed"}
+                                    readOnly
+                                    style={{ cursor: "pointer" }}
+                                  />
+                                  <span
+                                    style={{
+                                      fontSize: 13,
+                                      textDecoration: item.status === "completed" ? "line-through" : "none",
+                                      color: item.status === "completed" ? "#94a3b8" : "#0f172a",
+                                      fontWeight: item.status === "completed" ? 400 : 500,
+                                    }}
+                                  >
+                                    {item.title}
+                                  </span>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  {item.due_date && (
+                                    <span style={{ fontSize: 11, color: "var(--muted)" }}>
+                                      Due {new Date(item.due_date).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                  <span style={{ fontSize: 11, background: "#f1f5f9", color: "#475569", padding: "2px 8px", borderRadius: 12, fontWeight: 600 }}>
+                                    {item.owner || "Sales Rep"}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+
+                            {/* Inline Add Action Item */}
+                            <form onSubmit={handleAddActionItem} style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                              <input
+                                type="text"
+                                placeholder="Add a new agreed action item..."
+                                value={newActionTitle}
+                                onChange={(e) => setNewActionTitle(e.target.value)}
+                                style={{ flex: 1, padding: "8px 12px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)" }}
+                              />
+                              <button
+                                type="submit"
+                                disabled={!newActionTitle.trim()}
+                                style={{ background: "#334155", color: "#fff", border: "none", padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                              >
+                                + Add Item
+                              </button>
+                            </form>
+                          </div>
+                        </div>
+
+                        {/* Approved Follow-up Email Outreach */}
+                        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
+                              ✉️ Approved Follow-up Email Outreach
+                            </span>
+                            {followupBody && (
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(`Subject: ${followupSubject}
+
+${followupBody}`, "email")}
+                                style={{
+                                  background: "none",
+                                  border: "1px solid var(--border)",
+                                  borderRadius: 4,
+                                  padding: "3px 8px",
+                                  fontSize: 11,
+                                  cursor: "pointer",
+                                  color: copiedEmailDraft ? "#059669" : "#475569",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {copiedEmailDraft ? "✓ Copied Draft!" : "📋 Copy Draft"}
+                              </button>
+                            )}
+                          </div>
+                          <form onSubmit={handleSendFollowup} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>Recipient Email</label>
+                              <input
+                                type="email"
+                                required
+                                value={followupRecipient}
+                                onChange={(e) => setFollowupRecipient(e.target.value)}
+                                style={{ width: "100%", padding: "6px 10px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", marginTop: 2 }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>Subject</label>
+                              <input
+                                type="text"
+                                required
+                                value={followupSubject}
+                                onChange={(e) => setFollowupSubject(e.target.value)}
+                                style={{ width: "100%", padding: "6px 10px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", marginTop: 2 }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>Body</label>
+                              <textarea
+                                rows={4}
+                                required
+                                value={followupBody}
+                                onChange={(e) => setFollowupBody(e.target.value)}
+                                style={{ width: "100%", padding: "8px 10px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)", marginTop: 2, fontFamily: "inherit" }}
+                              />
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                              <button
+                                type="submit"
+                                disabled={sendingFollowup || !followupRecipient || !followupSubject || !followupBody}
+                                style={{
+                                  background: "var(--red)",
+                                  color: "#fff",
+                                  border: "none",
+                                  padding: "8px 18px",
+                                  borderRadius: 6,
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {sendingFollowup ? "Sending Follow-up…" : "Send Follow-up Email"}
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+
+                        {/* Transcripts & Call Notes */}
+                        <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 8, padding: 16 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
+                              📝 Dialog, Transcripts &amp; Raw Notes
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setShowPasteNotes(!showPasteNotes)}
+                              style={{
+                                background: "none",
+                                border: "1px dashed #cbd5e1",
+                                borderRadius: 4,
+                                padding: "4px 10px",
+                                fontSize: 12,
+                                color: "#475569",
+                                cursor: "pointer",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {showPasteNotes ? "Cancel" : "✏️ Paste Call Notes / MoM"}
+                            </button>
+                          </div>
+
+                          {showPasteNotes && (
+                            <div style={{ background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                              <p style={{ margin: "0 0 6px", fontSize: 12, color: "#64748b" }}>
+                                Paste meeting transcript or notes from this call to generate / refresh the AI MoM and key takeaways:
+                              </p>
+                              <textarea
+                                rows={5}
+                                value={pastedNotesText}
+                                onChange={(e) => setPastedNotesText(e.target.value)}
+                                placeholder={"Sales Rep: Welcome everyone. What are your main logistics pain points?\nProspect: We are facing warehouse bottlenecks at our Pune plant and need better TMS visibility."}
+                                style={{
+                                  width: "100%",
+                                  padding: 8,
+                                  borderRadius: 6,
+                                  border: "1px solid #cbd5e1",
+                                  fontSize: 12,
+                                  fontFamily: "monospace",
+                                  resize: "vertical",
+                                }}
+                              />
+                              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+                                <button
+                                  type="button"
+                                  disabled={savingNotes || !pastedNotesText.trim()}
+                                  onClick={handleSaveNotes}
+                                  style={{
+                                    background: "var(--red)",
+                                    color: "#fff",
+                                    border: "none",
+                                    borderRadius: 6,
+                                    padding: "6px 14px",
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  {savingNotes ? "Saving & Analyzing..." : "✨ Save Notes & Run AI Intelligence"}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {meetingDetail.transcripts.length === 0 || meetingDetail.transcripts.every((t) => t.entries.length === 0) ? (
+                            <div style={{ background: "#f8fafc", padding: 12, borderRadius: 6, fontSize: 12, color: "var(--muted)" }}>
+                              No raw transcript entries stored yet. Use &quot;Sync Artifacts&quot; to fetch automatically from {meetingDetail.provider === "teams" ? "Teams" : "Google Meet"}, or click &quot;✏️ Paste Call Notes / MoM&quot; above.
+                            </div>
+                          ) : (
+                            <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, border: "1px solid #e2e8f0", borderRadius: 6, padding: 10 }}>
+                              {meetingDetail.transcripts.flatMap((t) => t.entries).map((e) => (
+                                <div key={e.id} style={{ fontSize: 12 }}>
+                                  <span style={{ fontWeight: 600, color: "#0f172a" }}>{e.speaker_name}</span>{" "}
+                                  <span style={{ fontSize: 10, color: "#94a3b8" }}>{e.start_timestamp || ""}</span>
+                                  <p style={{ margin: "2px 0 0", color: "#334155" }}>{e.text}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
-
-                {/* Transcripts Viewer */}
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <h4 style={{ margin: 0, fontSize: 14 }}>Transcript & Dialog</h4>
-                    <button
-                      onClick={() => setShowPasteNotes(!showPasteNotes)}
-                      style={{
-                        background: "none",
-                        border: "1px dashed #cbd5e1",
-                        borderRadius: 4,
-                        padding: "3px 8px",
-                        fontSize: 12,
-                        color: "#475569",
-                        cursor: "pointer",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {showPasteNotes ? "Cancel" : "✏️ Paste Call Notes / Transcript"}
-                    </button>
-                  </div>
-
-                  {showPasteNotes && (
-                    <div style={{ background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: 8, padding: 12, marginBottom: 12 }}>
-                      <p style={{ margin: "0 0 6px", fontSize: 12, color: "#64748b" }}>
-                        Paste meeting transcript, call notes, or prospect dialogue to immediately trigger AI analysis:
-                      </p>
-                      <textarea
-                        rows={5}
-                        value={pastedNotesText}
-                        onChange={(e) => setPastedNotesText(e.target.value)}
-                        placeholder={"Sales Rep: Welcome everyone. What are your main logistics pain points?\nProspect: We are facing warehouse bottlenecks at our Pune plant and need better TMS visibility."}
-                        style={{
-                          width: "100%",
-                          padding: 8,
-                          borderRadius: 6,
-                          border: "1px solid #cbd5e1",
-                          fontSize: 12,
-                          fontFamily: "monospace",
-                          resize: "vertical",
-                        }}
-                      />
-                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
-                        <button
-                          disabled={savingNotes || !pastedNotesText.trim()}
-                          onClick={handleSaveNotes}
-                          style={{
-                            background: "var(--red)",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: 6,
-                            padding: "6px 14px",
-                            fontSize: 12,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                          }}
-                        >
-                          {savingNotes ? "Saving & Analyzing..." : "✨ Save & Run AI Intelligence"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {meetingDetail.transcripts.length === 0 || meetingDetail.transcripts.every((t) => t.entries.length === 0) ? (
-                    <div style={{ background: "#f8fafc", padding: 12, borderRadius: 6, fontSize: 12, color: "var(--muted)" }}>
-                      No transcript entries found yet. Use &quot;Sync Artifacts&quot; to fetch automatically from {meetingDetail.provider === "teams" ? "Teams" : "Google Meet"}, or click &quot;✏️ Paste Call Notes / Transcript&quot; above.
-                    </div>
-                  ) : (
-                    <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, border: "1px solid #e2e8f0", borderRadius: 6, padding: 10 }}>
-                      {meetingDetail.transcripts.flatMap((t) => t.entries).map((e) => (
-                        <div key={e.id} style={{ fontSize: 12 }}>
-                          <span style={{ fontWeight: 600, color: "#0f172a" }}>{e.speaker_name}</span>{" "}
-                          <span style={{ fontSize: 10, color: "#94a3b8" }}>{e.start_timestamp || ""}</span>
-                          <p style={{ margin: "2px 0 0", color: "#334155" }}>{e.text}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Items Checklist */}
-                <div>
-                  <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Action Items ({meetingDetail.action_items.length})</h4>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {meetingDetail.action_items.map((item) => (
-                      <div
-                        key={item.id}
-                        onClick={() => handleToggleActionItem(item)}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "8px 12px",
-                          borderRadius: 6,
-                          background: item.status === "completed" ? "#f1f5f9" : "#fff",
-                          border: "1px solid var(--border)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <input
-                            type="checkbox"
-                            checked={item.status === "completed"}
-                            readOnly
-                            style={{ cursor: "pointer" }}
-                          />
-                          <span
-                            style={{
-                              fontSize: 13,
-                              textDecoration: item.status === "completed" ? "line-through" : "none",
-                              color: item.status === "completed" ? "#94a3b8" : "#0f172a",
-                            }}
-                          >
-                            {item.title}
-                          </span>
-                        </div>
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>
-                          {item.owner || "Sales"}
-                        </span>
-                      </div>
-                    ))}
-
-                    <form onSubmit={handleAddActionItem} style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                      <input
-                        type="text"
-                        placeholder="Add a new action item..."
-                        value={newActionTitle}
-                        onChange={(e) => setNewActionTitle(e.target.value)}
-                        style={{ flex: 1, padding: "6px 10px", fontSize: 12, borderRadius: 6, border: "1px solid var(--border)" }}
-                      />
-                      <button
-                        type="submit"
-                        disabled={!newActionTitle.trim()}
-                        style={{ background: "#334155", color: "#fff", border: "none", padding: "6px 12px", borderRadius: 6, fontSize: 12, cursor: "pointer" }}
-                      >
-                        Add
-                      </button>
-                    </form>
-                  </div>
-                </div>
-
-                {/* AI Follow-up Email Composer */}
-                <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-                  <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Approved Follow-up Outreach</h4>
-                  <form onSubmit={handleSendFollowup} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div>
-                      <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>Recipient Email</label>
-                      <input
-                        type="email"
-                        required
-                        value={followupRecipient}
-                        onChange={(e) => setFollowupRecipient(e.target.value)}
-                        style={{ width: "100%", padding: "6px 10px", fontSize: 13, borderRadius: 6, border: "1px solid var(--border)" }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>Subject</label>
-                      <input
-                        type="text"
-                        required
-                        value={followupSubject}
-                        onChange={(e) => setFollowupSubject(e.target.value)}
-                        style={{ width: "100%", padding: "6px 10px", fontSize: 13, borderRadius: 6, border: "1px solid var(--border)" }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)" }}>Body</label>
-                      <textarea
-                        rows={5}
-                        required
-                        value={followupBody}
-                        onChange={(e) => setFollowupBody(e.target.value)}
-                        style={{ width: "100%", padding: "8px 10px", fontSize: 13, borderRadius: 6, border: "1px solid var(--border)" }}
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={sendingFollowup || !followupRecipient || !followupBody}
-                      style={{
-                        background: "#059669",
-                        color: "#fff",
-                        border: "none",
-                        padding: "10px 16px",
-                        borderRadius: 6,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 8,
-                      }}
-                    >
-                      {sendingFollowup ? "Sending Outreach…" : "🚀 Send Approved Follow-up"}
-                    </button>
-                  </form>
-                </div>
-              </>
-            )}
-          </div>
+              </div>
+            );
+          })
         )}
       </div>
 
@@ -1462,26 +1809,71 @@ export default function UnifiedMeetingsView({
                 </div>
 
                 {createType === "scheduled" && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    {/* Meeting Duration Selection */}
                     <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>Start Time</label>
-                      <input
-                        type="datetime-local"
-                        required
-                        value={createStart}
-                        onChange={(e) => setCreateStart(e.target.value)}
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", marginTop: 4 }}
-                      />
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>
+                          Meeting Length / Duration
+                        </label>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--red)" }}>
+                          {createDuration >= 60 ? (createDuration % 60 === 0 ? `${createDuration / 60} hour${createDuration > 60 ? "s" : ""}` : `${Math.floor(createDuration / 60)}h ${createDuration % 60}m`) : `${createDuration} mins`}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {[
+                          { label: "15 mins", val: 15 },
+                          { label: "30 mins", val: 30 },
+                          { label: "45 mins", val: 45 },
+                          { label: "1 hour", val: 60 },
+                          { label: "1.5 hours", val: 90 },
+                        ].map((item) => {
+                          const isActive = createDuration === item.val;
+                          return (
+                            <button
+                              key={item.val}
+                              type="button"
+                              onClick={() => handleSelectCreateDuration(item.val)}
+                              style={{
+                                padding: "6px 14px",
+                                borderRadius: 6,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                border: `1px solid ${isActive ? "var(--red)" : "var(--border)"}`,
+                                background: isActive ? "var(--red)" : "#ffffff",
+                                color: isActive ? "#ffffff" : "var(--primary-text)",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                              }}
+                            >
+                              {item.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>End Time</label>
-                      <input
-                        type="datetime-local"
-                        required
-                        value={createEnd}
-                        onChange={(e) => setCreateEnd(e.target.value)}
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", marginTop: 4 }}
-                      />
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>Start Time</label>
+                        <input
+                          type="datetime-local"
+                          required
+                          value={createStart}
+                          onChange={(e) => handleCreateStartChange(e.target.value)}
+                          style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", marginTop: 4 }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>End Time</label>
+                        <input
+                          type="datetime-local"
+                          required
+                          value={createEnd}
+                          onChange={(e) => handleCreateEndChange(e.target.value)}
+                          style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", marginTop: 4 }}
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1802,24 +2194,69 @@ export default function UnifiedMeetingsView({
               Select a new date and time. Updated calendar invitations with the Google Meet / Teams link will automatically be emailed to all participants.
             </p>
             <form onSubmit={handleRescheduleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* Reschedule Duration Preset Selector */}
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>New Start Time *</label>
-                <input
-                  type="datetime-local"
-                  required
-                  value={rescheduleStart}
-                  onChange={(e) => setRescheduleStart(e.target.value)}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", marginTop: 4 }}
-                />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>
+                    Meeting Length / Duration
+                  </label>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "#0284c7" }}>
+                    {rescheduleDuration >= 60 ? (rescheduleDuration % 60 === 0 ? `${rescheduleDuration / 60} hour${rescheduleDuration > 60 ? "s" : ""}` : `${Math.floor(rescheduleDuration / 60)}h ${rescheduleDuration % 60}m`) : `${rescheduleDuration} mins`}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[
+                    { label: "15 mins", val: 15 },
+                    { label: "30 mins", val: 30 },
+                    { label: "45 mins", val: 45 },
+                    { label: "1 hour", val: 60 },
+                    { label: "1.5 hours", val: 90 },
+                  ].map((item) => {
+                    const isActive = rescheduleDuration === item.val;
+                    return (
+                      <button
+                        key={item.val}
+                        type="button"
+                        onClick={() => handleSelectRescheduleDuration(item.val)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          border: `1px solid ${isActive ? "#0284c7" : "var(--border)"}`,
+                          background: isActive ? "#0284c7" : "#ffffff",
+                          color: isActive ? "#ffffff" : "var(--primary-text)",
+                          cursor: "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>New End Time</label>
-                <input
-                  type="datetime-local"
-                  value={rescheduleEnd}
-                  onChange={(e) => setRescheduleEnd(e.target.value)}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", marginTop: 4 }}
-                />
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>New Start Time *</label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={rescheduleStart}
+                    onChange={(e) => handleRescheduleStartChange(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", marginTop: 4 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>New End Time</label>
+                  <input
+                    type="datetime-local"
+                    value={rescheduleEnd}
+                    onChange={(e) => handleRescheduleEndChange(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", marginTop: 4 }}
+                  />
+                </div>
               </div>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>Reason / Note for Attendees (Optional)</label>

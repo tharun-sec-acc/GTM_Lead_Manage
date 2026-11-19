@@ -20,8 +20,25 @@ from app.models import Lead, now
 from app.tasks import run_company_research
 
 router = APIRouter(prefix="/intelligence", tags=["company intelligence"])
-_CATEGORIES = {"company", "news", "financial", "funding", "leadership", "competitors", "signals"}
-_CATEGORY_ALIASES = {"overview": "company", "financials": "financial"}
+_CATEGORIES = {
+    "company", "news", "financial", "funding", "leadership", "competitors", "signals",
+    "company_identity", "leadership_intelligence", "corporate_relationships",
+    "financial_research", "investment_funding", "financial_risk",
+    "business_operations", "fleet_transportation", "manufacturing_infrastructure",
+    "technology_digital", "news_developments", "competitor_intelligence",
+    "industry_market", "hiring_expansion", "pain_points_opportunities",
+}
+_CATEGORY_ALIASES = {
+    "overview": "company",
+    "financials": "financial",
+    "company_identity": "company",
+    "leadership_intelligence": "leadership",
+    "financial_research": "financial",
+    "investment_funding": "funding",
+    "news_developments": "news",
+    "competitor_intelligence": "competitors",
+    "pain_points_opportunities": "signals",
+}
 
 
 class ResearchRequest(BaseModel):
@@ -138,6 +155,7 @@ def _detail(session: Session, job: ResearchJob):
         "error": job.error,
         "sources_count": job.sources_count,
         "pages_processed": job.pages_processed,
+        "documents_analyzed": getattr(job, "documents_analyzed", 0),
         "facts_count": job.facts_count,
         "agents": [{
             "id": run.id,
@@ -448,6 +466,9 @@ def company_sources(company_id: str, limit: int = Query(100, ge=1, le=500),
         "publisher": source.publisher, "published_at": _json_time(source.published_at),
         "retrieved_at": _json_time(source.retrieved_at), "content_hash": source.content_hash,
         "category": source.category, "reliability": source.reliability,
+        "is_document": getattr(source, "is_document", False),
+        "mime_type": getattr(source, "mime_type", "text/html"),
+        "total_pages": getattr(source, "total_pages", None),
         "retrieval_method": source.retrieval_method, "excerpt": source.excerpt,
     } for source in sources], "total": total}
 
@@ -517,4 +538,8 @@ def get_report(report_id: str, session: Session = Depends(get_db)):
         "version": report.version, "created_at": _json_time(report.created_at),
         "summary": report.summary, "sections": report.sections,
         "limitations": report.limitations,
+        "one_page_summary": report.one_page_summary,
+        "analysis_data": report.analysis_data,
+        "product_opportunities": report.product_opportunities,
+        "what_changed": report.what_changed,
     }

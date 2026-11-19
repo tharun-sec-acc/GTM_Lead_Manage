@@ -16,53 +16,110 @@ from app.company_intelligence.services.budget import reserve_daily_bedrock_call
 
 
 ROLE_GUIDANCE = {
-    "company": (
-        "Describe the identified organization, business model, products and services, market segments, "
-        "locations and facilities, history, ownership, parent/subsidiary relationships, technology, "
-        "operations, supply chain and strategy. Use only facts directly stated in the supplied sources; "
-        "discovered pages are evidence only after retrieval."
+    # Group A: Corporate Intelligence
+    "company_identity": (
+        "Extract legal company name, incorporation year, corporate registration/CIN/ticker, corporate headquarters, "
+        "business model, core mission, ownership structure, and corporate history directly stated in public sources."
     ),
-    "news": (
-        "Find dated company announcements, product launches, appointments, partnerships, contracts, legal changes "
-        "or industry news in the supplied pages. Never invent publication dates; report only a date explicitly present."
+    "leadership_intelligence": (
+        "Extract named current board members, chairperson, CEO, CFO, CTO, CIO, COO, executive directors, and department heads. "
+        "Include their exact reported designations and publicly stated professional background."
     ),
-    "financial": (
-        "Extract reported financial metrics only. Retain the original value, currency and unit. Every numerical "
-        "financial claim must identify the legal entity, reporting period, standalone/consolidated scope, currency and "
-        "unit. Exclude an amount if any of those qualifiers is absent. Never calculate or estimate."
+    "corporate_relationships": (
+        "Extract parent organizations, holding companies, operating subsidiaries, joint ventures, associated entities, "
+        "group companies, international divisions, and merger/acquisition relationships explicitly cited."
     ),
-    "funding": (
-        "Extract funding rounds, investments, investors, acquisitions and valuations only when the cited passage "
-        "explicitly identifies the company as recipient or acquirer and states the event."
+    # Group B: Financial Intelligence
+    "financial_research": (
+        "Extract reported financial metrics: revenue, turnover, EBITDA, operating margin, PBT, PAT/net profit, assets, and debt. "
+        "Every numerical financial claim must identify legal entity, reporting period (FY/quarter), standalone vs consolidated scope, "
+        "currency, and unit. Exclude amount if any qualifier is absent. Never calculate or estimate."
     ),
-    "leadership": (
-        "Extract only explicitly named current leadership, founders or directors. Exclude former roles unless their "
-        "former status is directly stated. Do not infer identity or current employment."
+    "investment_funding": (
+        "Extract disclosed capital expenditure (capex), equity rounds, venture capital, strategic investments, "
+        "plant expansion investments, promoter stake, institutional holdings, and project investments."
     ),
-    "competitors": (
-        "Extract explicitly named competitors, alternatives, market segments, industries or "
-        "customer/partner relationships. Do not invent competitor lists or market-share estimates; "
-        "do not convert hypotheses or opportunities into facts."
+    "financial_risk": (
+        "Extract publicly disclosed financial risks, debt exposure, credit ratings (CRISIL, ICRA, etc.), foreign exchange risk, "
+        "declining margins, or auditor qualifications reported in official filings."
     ),
-    "signals": (
-        "Extract evidenced hiring, expansion, new technology, product, operations, supply-chain, "
-        "procurement or strategic signals. Keep observed developments separate from opportunities; "
-        "do not assert an unsupported sales opportunity."
+    # Group C: Operational Intelligence
+    "business_operations": (
+        "Extract core operations, service fulfillment models, production processes, warehousing, distribution networks, "
+        "cross-docking, raw material movement, and supply chain operating workflows."
+    ),
+    "fleet_transportation": (
+        "Extract commercial vehicle fleet size, truck types, GPS/telematics tracking, transport routes, logistics hubs, "
+        "turnaround times, driver workforce, and transportation logistics network scale."
+    ),
+    "manufacturing_infrastructure": (
+        "Extract manufacturing plants, factories, production facilities, warehouses, logistics parks, distribution centers, "
+        "square footage, operating capacity, and regional locations."
+    ),
+    "technology_digital": (
+        "Extract enterprise software systems (SAP, Oracle, ERP, TMS, WMS), cloud adoption, digital transformation, "
+        "shop-floor automation, IoT, vehicle telematics, and public technology partnerships."
+    ),
+    # Group D: Market Intelligence
+    "news_developments": (
+        "Extract dated company announcements, client contract wins, new service/product launches, joint ventures, "
+        "and corporate expansion milestones. Never invent publication dates."
+    ),
+    "competitor_intelligence": (
+        "Extract explicitly named competitors, alternatives, market segments, industries, and differentiated market positioning."
+    ),
+    "industry_market": (
+        "Extract macro industry trends, market growth forecasts, government policies (PLI schemes, GST, Bharat Stage/safety norms), "
+        "and supply chain developments."
+    ),
+    # Group E: Business Opportunity Intelligence
+    "hiring_expansion": (
+        "Extract evidenced hiring drives, new job openings, engineering/IT recruitment, operations/driver hiring, "
+        "and geographic expansion signals."
+    ),
+    "pain_points_opportunities": (
+        "Extract evidenced operational bottlenecks (e.g. rising freight/fuel costs, vehicle maintenance downtime, "
+        "inspection delays, manual warehouse tracking, defect losses) and potential improvement opportunities."
     ),
 }
+
+# Legacy aliases for backwards compatibility
+ROLE_GUIDANCE["company"] = ROLE_GUIDANCE["company_identity"]
+ROLE_GUIDANCE["leadership"] = ROLE_GUIDANCE["leadership_intelligence"]
+ROLE_GUIDANCE["financial"] = ROLE_GUIDANCE["financial_research"]
+ROLE_GUIDANCE["funding"] = ROLE_GUIDANCE["investment_funding"]
+ROLE_GUIDANCE["news"] = ROLE_GUIDANCE["news_developments"]
+ROLE_GUIDANCE["competitors"] = ROLE_GUIDANCE["competitor_intelligence"]
+ROLE_GUIDANCE["signals"] = ROLE_GUIDANCE["pain_points_opportunities"]
 
 _NUMBER = re.compile(r"(?<![A-Za-z])(?:[$€£₹]\s*)?\d[\d,.]*(?:\s*(?:%|percent|million|billion|thousand|crore|lakh))?", re.I)
 
-
 CATEGORY_PRIORITIES = {
-    "leadership": ["leadership", "management", "director", "board", "team", "founder", "executive", "officer", "chairman", "ceo", "md", "about"],
-    "financial": ["investor", "financial", "result", "quarterly", "annual", "overview", "revenue", "profit", "balance", "shares", "growth"],
-    "news": ["news", "press", "media", "announcement", "release", "notice", "event", "update", "filing"],
-    "company": ["about", "overview", "services", "branch", "network", "fleet", "logistics", "company", "transport", "warehouse", "operations"],
-    "funding": ["investor", "funding", "acquisition", "merger", "equity", "shares", "promoter", "stake"],
-    "competitors": ["services", "commodities", "parcel", "logistics", "network", "ftl", "ltl", "market", "industry", "customer", "partner"],
-    "signals": ["career", "technology", "expansion", "franchise", "hiring", "sustainability", "driver", "safety", "gps", "erp", "operations"],
+    "company_identity": ["about", "overview", "corporate", "history", "profile", "business", "company", "headquarters", "incorporation"],
+    "leadership_intelligence": ["leadership", "management", "director", "board", "team", "founder", "executive", "officer", "chairman", "ceo", "cfo", "cto", "md"],
+    "corporate_relationships": ["subsidiary", "parent", "joint-venture", "associated", "group", "holding", "acquisition", "merger", "division"],
+    "financial_research": ["investor", "financial", "result", "quarterly", "annual", "revenue", "profit", "ebitda", "balance", "growth", "pbt", "pat", "turnover"],
+    "investment_funding": ["capex", "investment", "funding", "equity", "shares", "promoter", "stake", "expenditure", "project"],
+    "financial_risk": ["risk", "debt", "borrowing", "liability", "rating", "crisil", "icra", "exposure", "auditor"],
+    "business_operations": ["operations", "supply-chain", "distribution", "fulfillment", "logistics", "dispatch", "warehousing", "workflow", "process"],
+    "fleet_transportation": ["fleet", "truck", "vehicle", "transport", "logistics", "freight", "telematics", "gps", "driver", "route", "turnaround"],
+    "manufacturing_infrastructure": ["manufacturing", "plant", "factory", "facility", "warehouse", "depot", "infrastructure", "capacity", "sq-ft", "park"],
+    "technology_digital": ["technology", "digital", "erp", "sap", "oracle", "software", "automation", "iot", "cloud", "telematics", "tms", "wms"],
+    "news_developments": ["news", "press", "media", "announcement", "release", "contract", "partnership", "update", "filing"],
+    "competitor_intelligence": ["competitor", "market", "rival", "alternative", "positioning", "industry", "segment"],
+    "industry_market": ["industry", "market", "trend", "policy", "regulatory", "growth", "sector", "government", "pli"],
+    "hiring_expansion": ["career", "hiring", "job", "recruitment", "expansion", "talent", "opening", "vacancy"],
+    "pain_points_opportunities": ["bottleneck", "challenge", "cost", "delay", "efficiency", "improvement", "fuel", "loss", "upgrade", "opportunity"],
 }
+
+# Legacy aliases
+CATEGORY_PRIORITIES["company"] = CATEGORY_PRIORITIES["company_identity"]
+CATEGORY_PRIORITIES["leadership"] = CATEGORY_PRIORITIES["leadership_intelligence"]
+CATEGORY_PRIORITIES["financial"] = CATEGORY_PRIORITIES["financial_research"]
+CATEGORY_PRIORITIES["funding"] = CATEGORY_PRIORITIES["investment_funding"]
+CATEGORY_PRIORITIES["news"] = CATEGORY_PRIORITIES["news_developments"]
+CATEGORY_PRIORITIES["competitors"] = CATEGORY_PRIORITIES["competitor_intelligence"]
+CATEGORY_PRIORITIES["signals"] = CATEGORY_PRIORITIES["pain_points_opportunities"]
 
 
 def _reserve_daily_call(session, job_id: str, agent: str) -> None:
@@ -99,14 +156,14 @@ def _source_payload(sources: list[ResearchSource], category: str) -> list[dict]:
         reverse=True,
     )
     selected = []
-    remaining = 65000
+    remaining = 42000
     for source in sorted_sources:
-        if remaining <= 0 or len(selected) >= 12:
+        if remaining <= 0 or len(selected) >= 10:
             break
         text = source.content_text or ""
         if not text.strip():
             continue
-        max_chunk = min(15000, remaining)
+        max_chunk = min(10000, remaining)
         excerpt = text[:max_chunk]
         selected.append({
             "source_id": source.id,
@@ -145,16 +202,25 @@ def extract_category_facts(job_id: str, company_id: str, agent: str, profile_arn
         "Keep quotes concise (1-2 sentences containing the exact evidence, 10 to 400 characters). "
         "Objective: " + ROLE_GUIDANCE[agent]
     )
-    payload = {"company": company_id, "sources": evidence, "maximum_facts": 25}
+    payload = {"company": company_id, "sources": evidence, "maximum_facts": 20}
     with SessionLocal.begin() as session:
         _reserve_daily_call(session, job_id, agent)
         usage_row = session.scalars(select(ResearchUsage).where(
             ResearchUsage.job_id == job_id, ResearchUsage.agent == agent
         ).order_by(ResearchUsage.created_at.desc())).first()
         usage_id = usage_row.id if usage_row else None
-    parsed, usage = bedrock.converse_json(
-        instruction, payload, model_id=profile_arn or None, include_usage=True, max_tokens=6000
-    )
+    try:
+        parsed, usage = bedrock.converse_json(
+            instruction, payload, model_id=profile_arn or None, include_usage=True, max_tokens=4096
+        )
+    except RuntimeError as exc:
+        if "truncated" in str(exc).lower():
+            parsed, usage = {
+                "facts": [],
+                "not_available": "Bedrock generation reached maximum token limit before completing evidence extraction.",
+            }, {}
+        else:
+            raise
 
     # Robust, fault-tolerant normalization of Bedrock output
     raw_facts = []
