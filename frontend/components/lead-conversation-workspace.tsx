@@ -408,7 +408,8 @@ export default function LeadConversationWorkspace({
             className={`conv-tab-btn ${categoryTab === "sales" ? "active" : ""}`}
             onClick={() => setCategoryTab("sales")}
           >
-            🔥 Sales Conversations
+            <UiIcon name="fire" size={14} />
+            <span>Sales Active</span>
             <span className="conv-tab-count">{counts.sales_count}</span>
           </button>
           <button
@@ -416,7 +417,8 @@ export default function LeadConversationWorkspace({
             className={`conv-tab-btn ${categoryTab === "followup" ? "active" : ""}`}
             onClick={() => setCategoryTab("followup")}
           >
-            ⏰ Follow-ups Due
+            <UiIcon name="clock" size={14} />
+            <span>Follow-ups Due</span>
             <span className="conv-tab-count">{counts.followup_count}</span>
           </button>
           <button
@@ -424,7 +426,8 @@ export default function LeadConversationWorkspace({
             className={`conv-tab-btn ${categoryTab === "all" ? "active" : ""}`}
             onClick={() => setCategoryTab("all")}
           >
-            All Conversations
+            <UiIcon name="inbox" size={14} />
+            <span>All Threads</span>
             <span className="conv-tab-count">{counts.total}</span>
           </button>
           <button
@@ -432,7 +435,8 @@ export default function LeadConversationWorkspace({
             className={`conv-tab-btn ${categoryTab === "automated" ? "active" : ""}`}
             onClick={() => setCategoryTab("automated")}
           >
-            🤖 Automated &amp; Bounces
+            <UiIcon name="shield" size={14} />
+            <span>Automated &amp; Bounces</span>
             <span className="conv-tab-count">{counts.automated_count}</span>
           </button>
         </div>
@@ -485,6 +489,13 @@ export default function LeadConversationWorkspace({
               const isSelected = conv.id === selectedId;
               const interest = conv.interest_level || "MEDIUM";
               const isPositive = ["VERY_HIGH", "HIGH"].includes(interest);
+              const initials = conv.company_name
+                .split(" ")
+                .filter(Boolean)
+                .slice(0, 2)
+                .map(w => w[0])
+                .join("")
+                .toUpperCase() || "C";
 
               return (
                 <div
@@ -492,37 +503,44 @@ export default function LeadConversationWorkspace({
                   className={`conv-card-item ${isSelected ? "selected" : ""} ${conv.is_sales_conversation ? "is-sales" : "is-bounce"}`}
                   onClick={() => setSelectedId(conv.id)}
                 >
-                  <div className="conv-card-top">
-                    <span className="conv-card-company">{conv.company_name}</span>
-                    <span className="conv-card-time">{timeAgo(conv.last_message_at)}</span>
-                  </div>
-
-                  <div className="conv-card-contact">
-                    <strong>{conv.contact_name}</strong>
-                    {conv.contact_title && <span style={{ color: "#64748b", fontSize: "12px" }}> · {conv.contact_title}</span>}
+                  <div className="conv-card-main-row">
+                    <div className="conv-avatar">{initials}</div>
+                    <div className="conv-card-head-info">
+                      <div className="conv-card-top">
+                        <span className="conv-card-company">{conv.company_name}</span>
+                        <span className="conv-card-time">{timeAgo(conv.last_message_at)}</span>
+                      </div>
+                      <div className="conv-card-contact">
+                        <strong>{conv.contact_name}</strong>
+                        {conv.contact_title && <span className="conv-card-role"> · {conv.contact_title}</span>}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="conv-card-badges">
                     <span className={`conv-pill ${conv.classification.toLowerCase()}`}>
                       {conv.classification.replace(/_/g, " ")}
                     </span>
-                    {conv.is_sales_conversation && (
-                      <span className={`conv-pill-interest ${interest.toLowerCase()}`}>
-                        {isPositive ? "🔥 " : ""}{interest} INTEREST
+                    {conv.is_sales_conversation && isPositive && (
+                      <span className="conv-pill-interest high">
+                        <UiIcon name="fire" size={10} />
+                        <span>{interest} Intent</span>
+                      </span>
+                    )}
+                    {conv.intelligence?.recommended_action && (
+                      <span className="conv-card-rec-pill">
+                        <UiIcon name="target" size={10} />
+                        <span>Action Ready</span>
                       </span>
                     )}
                   </div>
 
                   <div className="conv-card-snippet">
-                    {conv.last_message_direction === "inbound" ? "📥 " : "📤 "}
-                    {conv.last_message_snippet || "No messages yet"}
+                    <span className="snippet-dir-icon">
+                      <UiIcon name={conv.last_message_direction === "inbound" ? "inbox" : "send"} size={11} />
+                    </span>
+                    <span className="snippet-text">{conv.last_message_snippet || "No messages yet"}</span>
                   </div>
-
-                  {conv.intelligence?.recommended_action && (
-                    <div className="conv-card-rec">
-                      🎯 {conv.intelligence.recommended_action}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -571,36 +589,41 @@ export default function LeadConversationWorkspace({
               {/* AI Conversation Summary Callout */}
               {activeConversation.intelligence && (
                 <div className="conv-ai-summary-callout">
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                    <UiIcon name="spark" size={16} />
-                    <strong style={{ fontSize: "14px", color: "#4338ca" }}>AI Sales Conversation Intelligence</strong>
-                    <span style={{ fontSize: "12px", color: "#6366f1" }}>
-                      Claude 3.5 Sonnet Analysis · {Math.round((activeConversation.intelligence.confidence || 0.9) * 100)}% confidence
+                  <div className="conv-ai-callout-header">
+                    <div className="conv-ai-callout-title">
+                      <span className="conv-ai-spark-icon"><UiIcon name="spark" size={15} /></span>
+                      <strong>AI Conversation Intelligence</strong>
+                    </div>
+                    <span className="conv-ai-model-pill">
+                      Claude 3.5 Sonnet · {Math.round((activeConversation.intelligence.confidence || 0.9) * 100)}% Confidence
                     </span>
                   </div>
 
-                  <p style={{ margin: "0 0 10px", fontSize: "14px", color: "#1e1b4b", lineHeight: "1.5" }}>
+                  <p className="conv-ai-callout-summary">
                     {activeConversation.intelligence.message_summary}
                   </p>
 
-                  <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", fontSize: "13px" }}>
-                    {activeConversation.intelligence.requirements?.length > 0 && (
-                      <div style={{ flex: 1, minWidth: "200px" }}>
-                        <span style={{ fontWeight: 600, color: "#3730a3" }}>Stated Requirements:</span>
-                        <ul style={{ margin: "4px 0 0", paddingLeft: "18px", color: "#312e81" }}>
-                          {activeConversation.intelligence.requirements.map((req, i) => (
-                            <li key={i}>{req}</li>
+                  <div className="conv-ai-chips-grid">
+                    {activeConversation.intelligence.questions_asked?.length > 0 && (
+                      <div className="conv-ai-chip-group">
+                        <span className="conv-ai-chip-label">
+                          <UiIcon name="target" size={12} /> Prospect Questions:
+                        </span>
+                        <ul className="conv-ai-chip-list">
+                          {activeConversation.intelligence.questions_asked.map((q, i) => (
+                            <li key={i}>{q}</li>
                           ))}
                         </ul>
                       </div>
                     )}
-
-                    {activeConversation.intelligence.questions_asked?.length > 0 && (
-                      <div style={{ flex: 1, minWidth: "200px" }}>
-                        <span style={{ fontWeight: 600, color: "#3730a3" }}>Prospect Questions:</span>
-                        <ul style={{ margin: "4px 0 0", paddingLeft: "18px", color: "#312e81" }}>
-                          {activeConversation.intelligence.questions_asked.map((q, i) => (
-                            <li key={i}>{q}</li>
+                    {activeConversation.intelligence.requirements?.length > 0 && (
+                      <div className="conv-ai-chip-group">
+                        <span className="conv-ai-chip-label">
+                          <UiIcon name="checkCircle" size={12} /> Stated Requirements:
+                        </span>
+                        <ul className="conv-ai-chip-list">
+                          {activeConversation.intelligence.requirements.map((req, i) => (
+                            <li key={i}>{req}</li>
                           ))}
                         </ul>
                       </div>
@@ -619,7 +642,8 @@ export default function LeadConversationWorkspace({
                       <div className="conv-msg-header">
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                           <span className={`conv-direction-pill ${isOutbound ? "out" : "in"}`}>
-                            {isOutbound ? "📤 Outreach Dispatched" : "📥 Prospect Response"}
+                            <UiIcon name={isOutbound ? "send" : "inbox"} size={11} />
+                            <span>{isOutbound ? "Outreach Dispatched" : "Prospect Response"}</span>
                           </span>
                           {isOutbound && msg.step_number !== null && (
                             <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>
@@ -628,7 +652,7 @@ export default function LeadConversationWorkspace({
                           )}
                           {!isOutbound && msg.classification && (
                             <span className="conv-classification-tag">
-                              {msg.classification}
+                              {msg.classification.replace(/_/g, " ")}
                             </span>
                           )}
                         </div>
@@ -648,11 +672,14 @@ export default function LeadConversationWorkspace({
                       {/* Attachments Chip */}
                       {msg.attachments && msg.attachments.length > 0 && (
                         <div className="conv-msg-attachments">
-                          <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>📎 Collateral attached:</span>
+                          <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                            <UiIcon name="paperclip" size={12} /> Collateral attached:
+                          </span>
                           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "4px" }}>
                             {msg.attachments.map((att, aIdx) => (
                               <span key={aIdx} className="conv-attachment-chip">
-                                📄 {att}
+                                <UiIcon name="file" size={12} />
+                                <span>{att}</span>
                               </span>
                             ))}
                           </div>
@@ -668,18 +695,18 @@ export default function LeadConversationWorkspace({
               {activeConversation.enrollment_id && (
                 <div className="conv-composer-card">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <strong style={{ fontSize: "14px", color: "#0f172a" }}>
-                      ✉️ Reply &amp; Follow Up with {activeConversation.contact_name}
+                    <strong style={{ fontSize: "14px", color: "#0f172a", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                      <UiIcon name="mail" size={14} /> Reply &amp; Follow Up with {activeConversation.contact_name}
                     </strong>
                     <button
                       type="button"
                       className="secondary"
                       disabled={generatingDraft}
                       onClick={handleGenerateAIDraft}
-                      style={{ padding: "5px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px", color: "#4338ca" }}
+                      style={{ padding: "5px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px", color: "#4338ca", fontWeight: 600 }}
                     >
                       <UiIcon name="spark" size={14} />
-                      {generatingDraft ? "Generating Claude Draft..." : "✨ Generate AI Reply Draft"}
+                      {generatingDraft ? "Generating Claude Draft..." : "Generate AI Reply Draft"}
                     </button>
                   </div>
 
@@ -713,7 +740,7 @@ export default function LeadConversationWorkspace({
                       style={{ color: "#0284c7" }}
                       title="Attach Collateral"
                     >
-                      📎 {uploading ? "Uploading..." : "Attach Collateral"}
+                      <UiIcon name="paperclip" size={13} /> {uploading ? "Uploading..." : "Attach Collateral"}
                     </button>
                     <input
                       type="file"
@@ -737,7 +764,8 @@ export default function LeadConversationWorkspace({
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "6px" }}>
                       {replyAttachments.map(att => (
                         <span key={att.id} className="conv-attachment-chip">
-                          📄 {att.filename}
+                          <UiIcon name="file" size={12} />
+                          <span>{att.filename}</span>
                           <button
                             type="button"
                             onClick={() => setReplyAttachments(prev => prev.filter(x => x.id !== att.id))}
@@ -758,7 +786,7 @@ export default function LeadConversationWorkspace({
                       onClick={handleSendReply}
                       style={{ padding: "8px 18px", fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
                     >
-                      <UiIcon name="mail" size={14} />
+                      <UiIcon name="send" size={14} />
                       {sendingReply ? "Sending..." : "Send Reply Now"}
                     </button>
                   </div>
@@ -808,11 +836,12 @@ export default function LeadConversationWorkspace({
                 </div>
 
                 {activeConversation.intelligence?.recommended_action && (
-                  <div style={{ marginTop: "14px", padding: "10px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "6px" }}>
-                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#166534", textTransform: "uppercase" }}>
-                      🎯 AI Recommended Next Action
-                    </span>
-                    <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#14532d", lineHeight: "1.4" }}>
+                  <div className="conv-action-card">
+                    <div className="conv-action-card-header">
+                      <UiIcon name="target" size={13} />
+                      <span>AI Recommended Next Action</span>
+                    </div>
+                    <p className="conv-action-card-body">
                       {activeConversation.intelligence.recommended_action}
                     </p>
                   </div>
@@ -832,11 +861,11 @@ export default function LeadConversationWorkspace({
                       disabled={savingStatus}
                       style={{ marginTop: "4px", width: "100%", fontSize: "13px" }}
                     >
-                      <option value="FOLLOW_UP_REQUIRED">⏰ Follow-up Required</option>
-                      <option value="FOLLOW_UP_SCHEDULED">📅 Follow-up Scheduled</option>
-                      <option value="FOLLOW_UP_DUE">⚠️ Follow-up Due</option>
-                      <option value="FOLLOW_UP_COMPLETED">✓ Follow-up Completed</option>
-                      <option value="WAITING_FOR_RESPONSE">⏳ Waiting for Response</option>
+                      <option value="FOLLOW_UP_REQUIRED">Follow-up Required</option>
+                      <option value="FOLLOW_UP_SCHEDULED">Follow-up Scheduled</option>
+                      <option value="FOLLOW_UP_DUE">Follow-up Due</option>
+                      <option value="FOLLOW_UP_COMPLETED">Follow-up Completed</option>
+                      <option value="WAITING_FOR_RESPONSE">Waiting for Response</option>
                     </select>
                   </label>
                 </div>
@@ -863,26 +892,30 @@ export default function LeadConversationWorkspace({
                 </div>
               </div>
 
-              {/* Collateral & TWMS Assets Shortcut */}
+              {/* Collateral & Solwer Assets Shortcut */}
               <div className="conv-side-card">
-                <span className="side-card-title">DENSO TWMS COLLATERAL</span>
+                <span className="side-card-title">SOLWER COLLATERAL</span>
                 <p style={{ margin: "4px 0 8px", fontSize: "12px", color: "#64748b" }}>
-                  Standard collateral approved for logistics outreach:
+                  Standard collateral approved for solutions outreach:
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", padding: "6px 8px", background: "#f8fafc", borderRadius: "4px", border: "1px solid #e2e8f0" }}>
-                    <span>📄 TWMS Overview Presentation.pdf</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                      <UiIcon name="file" size={12} /> TWMS Overview Presentation.pdf
+                    </span>
                     <button
                       type="button"
                       className="secondary"
-                      onClick={() => setReplyBody(prev => prev + "\n\nI have attached our DENSO Solwer TWMS Presentation for your review.")}
+                      onClick={() => setReplyBody(prev => prev + "\n\nI have attached our Solwer TWMS Overview Presentation for your review.")}
                       style={{ fontSize: "11px", padding: "2px 6px" }}
                     >
                       Reference
                     </button>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", padding: "6px 8px", background: "#f8fafc", borderRadius: "4px", border: "1px solid #e2e8f0" }}>
-                    <span>📄 Solwer Manufacturing Case Study.pdf</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}>
+                      <UiIcon name="file" size={12} /> Solwer Manufacturing Case Study.pdf
+                    </span>
                     <button
                       type="button"
                       className="secondary"

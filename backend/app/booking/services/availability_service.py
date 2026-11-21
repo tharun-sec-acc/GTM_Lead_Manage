@@ -182,6 +182,7 @@ class AvailabilityService:
         start_dt: datetime,
         end_dt: datetime,
         require_both_calendars: bool = True,
+        duration_minutes: int | None = None,
     ) -> AvailabilityResponse:
         """Calculate and return available slots for the customer."""
         busy_intervals = AvailabilityService.get_busy_intervals(
@@ -211,11 +212,14 @@ class AvailabilityService:
             range_end=end_dt,
             busy_intervals=busy_intervals,
             daily_meeting_counts=daily_counts,
+            duration_minutes=duration_minutes,
         )
+
+        effective_duration = duration_minutes if (duration_minutes and duration_minutes >= 10) else profile.duration_minutes
 
         return AvailabilityResponse(
             profile_slug=profile.public_slug,
             timezone=target_timezone_str,
-            duration_minutes=profile.duration_minutes,
+            duration_minutes=effective_duration,
             slots=slots,
         )

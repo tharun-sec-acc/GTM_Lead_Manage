@@ -3,8 +3,8 @@ import "./style.css";
 import AppShell from "../components/app-shell";
 
 export const metadata: Metadata = {
-  title: "DENSO Prospecting",
-  description: "Sales prospecting pilot",
+  title: "Solwer GTM | Enterprise Sales Intelligence Platform",
+  description: "Evidence-grounded sales prospecting and autonomous automotive intelligence",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

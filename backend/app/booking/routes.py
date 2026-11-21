@@ -134,6 +134,7 @@ def get_public_availability(
     start: str = Query(..., description="Start date/time (ISO format or YYYY-MM-DD)"),
     end: str = Query(..., description="End date/time (ISO format or YYYY-MM-DD)"),
     timezone_param: str | None = Query(None, alias="timezone", description="Customer timezone"),
+    duration_minutes: int | None = Query(None, alias="duration_minutes", description="Requested meeting length in minutes (15, 30, 45, 60)"),
     session: Session = Depends(get_db),
 ):
     """Calculate combined free slots aggregating Google and Outlook calendars."""
@@ -184,6 +185,7 @@ def get_public_availability(
             target_timezone_str=target_tz,
             start_dt=start_dt,
             end_dt=end_dt,
+            duration_minutes=duration_minutes,
         )
     except AvailabilityServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

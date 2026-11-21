@@ -26,6 +26,10 @@ celery_app.conf.update(
         "classify-replies": {"task": "app.tasks.classify_replies", "schedule": 60.0},
         "poll-meeting-artifacts": {"task": "app.tasks.poll_meeting_artifacts", "schedule": 300.0},
         "cleanup-expired-booking-reservations": {"task": "app.tasks.cleanup_expired_booking_reservations_task", "schedule": 60.0},
+        "zoho-outbound-sync": {"task": "app.tasks.zoho_outbound_sync_task", "schedule": 120.0},
+        "zoho-inbound-sync": {"task": "app.tasks.zoho_inbound_sync_task", "schedule": 300.0},
+        "zoho-token-refresh": {"task": "app.tasks.zoho_token_refresh_task", "schedule": 900.0},
+        "crawl-market-sources": {"task": "app.tasks.crawl_market_sources_task", "schedule": 300.0},
     },
 )
 
@@ -188,4 +192,30 @@ def poll_meeting_artifacts():
 def cleanup_expired_booking_reservations_task():
     from app.booking.tasks.booking_tasks import cleanup_expired_booking_reservations_sync
     return cleanup_expired_booking_reservations_sync()
+
+
+@celery_app.task(name="app.tasks.zoho_outbound_sync_task")
+def zoho_outbound_sync_task():
+    from app.zoho.tasks import zoho_outbound_sync_task as task_impl
+    return task_impl()
+
+
+@celery_app.task(name="app.tasks.zoho_inbound_sync_task")
+def zoho_inbound_sync_task():
+    from app.zoho.tasks import zoho_inbound_sync_task as task_impl
+    return task_impl()
+
+
+@celery_app.task(name="app.tasks.zoho_token_refresh_task")
+def zoho_token_refresh_task():
+    from app.zoho.tasks import zoho_token_refresh_task as task_impl
+    return task_impl()
+
+
+@celery_app.task(name="app.tasks.crawl_market_sources_task")
+def crawl_market_sources_task():
+    from app.market_intelligence.tasks import crawl_due_market_sources
+    return crawl_due_market_sources(max_sources=4)
+
+
 

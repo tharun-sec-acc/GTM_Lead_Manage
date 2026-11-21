@@ -31,6 +31,8 @@ from app.meetings import router as meetings_router
 from app.meetings.service import meeting_service
 from app.booking.routes import router as booking_router
 from app.booking.models import Booking
+from app.zoho.routes import router as zoho_router
+from app.market_intelligence.routes import router as market_intelligence_router
 
 app = FastAPI(title="DENSO Prospecting Pilot")
 app.include_router(followup_router)
@@ -45,6 +47,9 @@ app.include_router(product_research_router)
 app.include_router(meetings_router)
 app.include_router(booking_router)
 app.include_router(booking_router, prefix="/api")
+app.include_router(zoho_router)
+app.include_router(zoho_router, prefix="/api")
+app.include_router(market_intelligence_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],

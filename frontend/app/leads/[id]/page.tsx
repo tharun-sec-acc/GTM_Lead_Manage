@@ -6,6 +6,7 @@ import DirectOutreachPanel from "../../../components/direct-outreach-panel";
 import IntelligenceWorkspace from "../../../components/intelligence-workspace";
 import UnifiedMeetingsView from "../../../components/unified-meetings-view";
 import UiIcon from "../../../components/ui-icon";
+import { fetchOpportunities, type OpportunitySignalItem } from "../../../lib/market-intelligence";
 
 const API = "http://localhost:8000";
 type Contact = {
@@ -66,10 +67,26 @@ export default function LeadProfilePage() {
   const [domainInput, setDomainInput] = useState("");
   const [savingDomain, setSavingDomain] = useState(false);
   const [domainNotice, setDomainNotice] = useState("");
+  const [marketSignals, setMarketSignals] = useState<OpportunitySignalItem[]>([]);
 
   const reloadProfile = () => {
     loadProfile(params.id).then(setProfile).catch(() => {});
   };
+
+  useEffect(() => {
+    if (!params.id) return;
+    fetchOpportunities("all", "all", "all", undefined, params.id)
+      .then((res) => {
+        if (res.length > 0) {
+          setMarketSignals(res);
+        } else if (profile?.lead?.company_name) {
+          fetchOpportunities("all", "all", "all", profile.lead.company_name)
+            .then(setMarketSignals)
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, [params.id, profile?.lead?.company_name]);
 
   useEffect(() => {
     let mounted = true;
@@ -124,7 +141,7 @@ export default function LeadProfilePage() {
   if (!profile) return <main><p>Loading company profile…</p></main>;
   const { lead, overview } = profile;
   return <main>
-    <header><div><p className="eyebrow">DENSO / LEAD 360</p><h1>{lead.company_name}</h1>
+    <header><div><p className="eyebrow">SOLWER GTM / LEAD 360</p><h1>{lead.company_name}</h1>
       <p>{lead.domain || "Domain not confirmed"} · Local pilot · no sign-in</p></div>
       <a href="/">← Lead workspace</a></header>
     <div className="actions">
@@ -132,6 +149,24 @@ export default function LeadProfilePage() {
       <a className="button-link secondary" href="#contacts"><UiIcon name="mail" size={16} /> Compose and send emails</a>
       <a className="button-link secondary" href="#contacts">Select people</a>
       <a className="button-link secondary" href={`/?lead=${encodeURIComponent(lead.id)}#companies`}><UiIcon name="search" size={16} /> Find people with Apollo</a>
+      <button
+        type="button"
+        className="button-link secondary"
+        onClick={async () => {
+          try {
+            const res = await fetch(`http://localhost:8000/zoho/sync/leads/${encodeURIComponent(lead.id)}`, { method: "POST" });
+            const data = await res.json();
+            if (res.ok) alert(`Synced to Zoho CRM! Account ID: ${data.zoho_account_id || "Updated"}`);
+            else alert(data?.detail || "Sync to Zoho failed (check if Zoho CRM is connected).");
+          } catch {
+            alert("Error communicating with Zoho CRM sync endpoint.");
+          }
+        }}
+        title="Sync this company & its contacts to Zoho CRM"
+      >
+        <UiIcon name="link" size={16} /> Sync to Zoho CRM
+      </button>
+      <a className="text-link" href="/zoho">Zoho CRM Settings <UiIcon name="arrow" size={15} /></a>
       <a className="text-link" href="/followups">Mailbox &amp; tracking <UiIcon name="arrow" size={15} /></a>
     </div>
     <div className="alert">This profile contains existing pilot data only. Empty or unimplemented sections are labeled; no CRM stage, meeting, research or commercial records are fabricated.</div>
@@ -158,7 +193,7 @@ export default function LeadProfilePage() {
       </a>
     </div>
     <nav className="actions" aria-label="Lead profile sections">
-      {[["overview", "Overview"], ["research", "Intelligence"], ["contacts", "Contacts & Direct Outreach"],
+      {[["overview", "Overview"], ["research", "Intelligence"], ["signals", "Market Signals"], ["contacts", "Contacts & Direct Outreach"],
         ["emails", "Email history"], ["meetings", "Meetings"], ["commercial", "Commercial"], ["timeline", "Timeline"]].map(([section, title]) =>
         <a key={section} href={`#${section}`}>{title}</a>)}
     </nav>
@@ -192,9 +227,40 @@ export default function LeadProfilePage() {
       <p><strong>Revenue:</strong> {lead.revenue || "Not recorded"} · <strong>Lead owner:</strong> {overview.owner || "Not implemented"}</p>
       <p><strong>Lifecycle stage:</strong> {overview.lifecycle_stage || "Not implemented"} · <strong>Domain:</strong> {lead.domain || "Not confirmed"}</p>
       <p><strong>Contact number:</strong> {lead.phone || "Not recorded"} · <strong>Remarks:</strong> {lead.remarks || "—"}</p>
-      <p><strong>Key person information:</strong> {lead.key_person_info || "—"} · <strong>Designation:</strong> {lead.designation || "—"}</p>
+      <p><strong>Key person information:</strong> {lead.key_person_info || "—"} · <strong>Designation:</strong> {lead.designation || "—"} director</p>
       {Object.keys(lead.extra || {}).length > 0 &&
         <details><summary>Additional imported data</summary><pre>{JSON.stringify(lead.extra, null, 2)}</pre></details>}
+      {overview.meeting_count > 0 && (
+        <div style={{ margin: "16px 0", padding: "16px 20px", background: "#f0fdf4", borderRadius: "10px", border: "1px solid #bbf7d0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 16 }}>📋</span>
+              <strong style={{ fontSize: 14, color: "#166534" }}>Meeting Minutes (MoM) &amp; Intelligence Ready</strong>
+              <span style={{ fontSize: 11, background: "#dcfce7", color: "#15803d", padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>
+                {overview.meeting_count} {overview.meeting_count === 1 ? "Meeting" : "Meetings"}
+              </span>
+            </div>
+            <p style={{ margin: 0, fontSize: 13, color: "#14532d" }}>
+              AI MoM, executive summary, customer requirements, pain points, and action items are automatically generated for {lead.company_name}.
+            </p>
+          </div>
+          <a
+            href="#meetings"
+            style={{
+              padding: "8px 16px",
+              background: "#16a34a",
+              color: "#ffffff",
+              borderRadius: "6px",
+              fontSize: "13px",
+              fontWeight: 600,
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            View Meeting MoM ↓
+          </a>
+        </div>
+      )}
       <p>Created date and next activity are not currently tracked as lifecycle fields.</p>
     </section>
     <section id="research" className="lead-intelligence-section">
@@ -246,6 +312,88 @@ export default function LeadProfilePage() {
         <summary>{reply.subject || "Customer reply"} · {reply.classification || "Unclassified"} · {date(reply.received_at)}</summary>
         <p>From: {reply.recipient || "Unknown"}</p><pre>{reply.body}</pre>
       </details>) : <p>No matched replies are recorded.</p>}
+    </section>
+    <section id="signals" style={{ padding: "16px 0" }}>
+      <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "20px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 18 }}>📡</span>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#0f172a" }}>Autonomous Market Intelligence &amp; Opportunity Signals</h2>
+            </div>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>
+              Continuous Playwright web monitoring detects plant expansions, fleet acquisitions, tenders, and business developments for {profile.lead.company_name}.
+            </p>
+          </div>
+          <a
+            href={`/market-intelligence`}
+            style={{
+              padding: "8px 16px",
+              background: "var(--red)",
+              color: "#ffffff",
+              borderRadius: "6px",
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            Open Market Intelligence Radar <UiIcon name="arrow" size={14} />
+          </a>
+        </div>
+
+        {marketSignals.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
+            {marketSignals.map((sig) => (
+              <div
+                key={sig.id}
+                style={{
+                  background: sig.priority_level === "high" ? "#fffbfb" : "#f8fafc",
+                  border: sig.priority_level === "high" ? "1.5px solid #fca5a5" : "1px solid #e2e8f0",
+                  borderRadius: 8,
+                  padding: "14px 16px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
+                  <div>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--red)", textTransform: "uppercase" }}>
+                      Matched Solwer Solution:
+                    </span>
+                    <strong style={{ fontSize: 15, color: "#0f172a", marginLeft: 6 }}>{sig.product_name}</strong>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, background: sig.priority_level === "high" ? "#fee2e2" : "#fef3c7", color: sig.priority_level === "high" ? "var(--red)" : "#d97706", padding: "2px 8px", borderRadius: 6 }}>
+                      {sig.priority_level.toUpperCase()}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 800, background: "#f0fdf4", color: "#166534", padding: "2px 8px", borderRadius: 6 }}>
+                      Readiness: {sig.sales_readiness_score}/100
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 13, color: "#0f172a", fontWeight: 600, marginBottom: 4 }}>
+                  📰 {sig.article_headline || sig.event_title}
+                </div>
+
+                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, padding: "8px 12px", marginTop: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#166534", textTransform: "uppercase" }}>
+                    💡 Where Solwer Helps:
+                  </div>
+                  <div style={{ fontSize: 12, color: "#1e3a8a", marginTop: 2, fontWeight: 500 }}>
+                    &quot;{sig.suggested_next_action}&quot;
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ padding: "14px 16px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", marginTop: 12, fontSize: 13, color: "#64748b" }}>
+            No active market signals recorded yet for {profile.lead.company_name}. Crawlers monitor 62 Indian websites to automatically detect upcoming announcements, tenders, and expansions.
+          </div>
+        )}
+      </div>
     </section>
     <section id="meetings" style={{ padding: "16px 0" }}>
       <UnifiedMeetingsView

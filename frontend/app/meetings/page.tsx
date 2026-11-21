@@ -69,7 +69,7 @@ export default function MeetingsPage() {
     <main>
       <header style={{ marginBottom: 20 }}>
         <div>
-          <p className="eyebrow">DENSO GTM / VIDEO INTELLIGENCE</p>
+          <p className="eyebrow">SOLWER GTM / VIDEO INTELLIGENCE</p>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Link href="/" style={{ fontSize: 13, color: "var(--muted)" }}>
               ← Return to Dashboard

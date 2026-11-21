@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     meeting_workday_start_hour: int = 9
     meeting_workday_end_hour: int = 17
     meeting_booking_window_days: int = 30
+    zoho_client_id: str = ""
+    zoho_client_secret: str = ""
+    zoho_redirect_uri: str = "http://localhost:8000/zoho/oauth/callback"
+    zoho_accounts_domain: str = "https://accounts.zoho.in"
+    zoho_api_domain: str = "https://www.zohoapis.in"
+    zoho_crm_api_version: str = "v8"
+    zoho_token_encryption_key: str = ""
+    zoho_sync_enabled: bool = True
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

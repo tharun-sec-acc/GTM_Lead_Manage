@@ -46,6 +46,14 @@ class _Response:
     body: bytes
 
 
+_HTML_BOUNDARY_TAGS = {
+    "p", "div", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6",
+    "br", "hr", "tr", "td", "th", "a", "span", "section", "article",
+    "header", "footer", "nav", "aside", "main", "button", "label",
+    "dt", "dd", "option", "figcaption", "table", "tbody", "thead",
+}
+
+
 class _HTMLDocument(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -69,7 +77,7 @@ class _HTMLDocument(HTMLParser):
             value = attrs.get("content", "").strip()
             if key and value:
                 self.metadata[key] = value
-        if tag in {"p", "div", "li", "h1", "h2", "h3", "br", "tr"}:
+        if tag in _HTML_BOUNDARY_TAGS:
             self.text_parts.append(" ")
 
     def handle_endtag(self, tag):
@@ -77,7 +85,7 @@ class _HTMLDocument(HTMLParser):
             self.in_title = False
         if tag in {"script", "style", "noscript", "svg", "template"} and self.hidden_depth:
             self.hidden_depth -= 1
-        if tag in {"p", "div", "li", "h1", "h2", "h3", "tr"}:
+        if tag in _HTML_BOUNDARY_TAGS:
             self.text_parts.append(" ")
 
     def handle_data(self, data):
@@ -458,13 +466,17 @@ def _page_priority(url: str) -> tuple[int, str]:
         ("about", 1), ("overview", 1), ("who-we-are", 1), ("corporate", 1),
         ("leadership", 2), ("management", 2), ("board", 2), ("director", 2), ("governance", 2),
         ("investor", 3), ("financial", 3), ("filing", 3), ("quarterly", 3), ("results", 3),
-        ("product", 4), ("service", 4), ("solution", 4), ("manufacturing", 4), ("facility", 4),
-        ("fleet", 5), ("network", 5), ("infrastructure", 5), ("warehouse", 5), ("transport", 5), ("logistics", 5),
         (".pdf", 3),
-        ("news", 6), ("press", 6), ("media", 6), ("announcement", 6), ("release", 6),
-        ("technology", 7), ("sustainability", 7), ("esg", 7), ("career", 8), ("contact", 9),
+        # Prioritize core Solwer target operational areas:
+        ("warehouse", 4), ("supply-chain", 4), ("logistics", 4), ("transport", 4), ("freight", 4),
+        ("fleet", 4), ("manufacturing", 4), ("plant", 4), ("facility", 4), ("factory", 4),
+        ("product", 5), ("service", 5), ("solution", 5), ("inspection", 5), ("workshop", 5),
+        ("aftermarket", 5), ("infrastructure", 5), ("network", 5),
+        ("sustainability", 6), ("esg", 6), ("carbon", 6), ("green", 6),
+        ("news", 7), ("press", 7), ("media", 7), ("announcement", 7), ("release", 7),
+        ("technology", 8), ("career", 9), ("contact", 10),
     )
-    return (next((priority for token, priority in priorities if token in path), 10), url)
+    return (next((priority for token, priority in priorities if token in path), 11), url)
 
 
 def gather_official_pages(domain: str, max_pages: int, max_depth: int,
@@ -543,8 +555,9 @@ def gather_official_pages(domain: str, max_pages: int, max_depth: int,
                                            can_fetch=lambda target: parser.can_fetch("GTMProspectingResearch", target),
                                            deadline=deadline)
             except SourceError as exc:
-                total_bytes += request_budget
                 limitations.append(f"{clean_url}: {exc}")
+                if "oversized" in str(exc).lower():
+                    total_bytes += request_budget
                 continue
             total_bytes += len(response.body)
             try:
@@ -566,6 +579,8 @@ def gather_official_pages(domain: str, max_pages: int, max_depth: int,
                         limitations.append(f"{clean_url}: JavaScript content requires RESEARCH_BROWSER_ENABLED.")
             except SourceError as exc:
                 limitations.append(f"{clean_url}: {exc}")
+                if "oversized" in str(exc).lower():
+                    total_bytes += request_budget
                 continue
             if not page:
                 continue

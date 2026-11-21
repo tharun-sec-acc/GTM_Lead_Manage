@@ -726,15 +726,21 @@ function InboundMailAnalyticsCard({
         </div>
         <div className="inbound-stat-box featured">
           <strong>{(analytics?.classification_counts?.meeting_requested ?? 0) + (analytics?.classification_counts?.demo_requested ?? 0)}</strong>
-          <span>📅 Meetings &amp; Demos</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+            <UiIcon name="calendar" size={13} /> Meetings &amp; Demos
+          </span>
         </div>
         <div className="inbound-stat-box">
           <strong>{analytics?.classification_counts?.interested ?? 0}</strong>
-          <span>💡 High Interest</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+            <UiIcon name="fire" size={13} /> High Interest
+          </span>
         </div>
         <div className="inbound-stat-box" style={{ background: "#f8fafc" }}>
           <strong>{(analytics?.classification_counts?.hard_bounce ?? 0) + (analytics?.classification_counts?.bounce_review ?? 0)}</strong>
-          <span>🤖 Bounces (Filtered)</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+            <UiIcon name="shield" size={13} /> Filtered Bounces
+          </span>
         </div>
       </div>
 
@@ -1102,9 +1108,9 @@ export default function OutreachWorkspace({
       {!fixedLeadId && (
         <header>
           <div>
-            <p className="eyebrow">DENSO / SALES INTELLIGENCE</p>
-            <h1>Outreach & Follow-Up Automation</h1>
-            <p>Personalized GTM outreach. Pre-drafted with LeadRoad &lt;&gt; DENSO Solwer TWMS copy. Grounded in verified company intelligence.</p>
+            <p className="eyebrow">SOLWER GTM / SALES INTELLIGENCE</p>
+            <h1>Outreach &amp; Follow-Up Automation</h1>
+            <p>Targeted sales engagement and prospect follow-ups. Grounded in verified company intelligence.</p>
           </div>
           <Link className="button-link secondary" href="/">
             <UiIcon name="companies" size={16} /> Company workspace
@@ -1126,7 +1132,7 @@ export default function OutreachWorkspace({
 
       <ol className="workflow-steps">
         <li><strong>1. Select Outreach Target</strong> — Choose target company and contacts</li>
-        <li><strong>2. Add Recipients</strong> — Drafts are automatically populated with DENSO Solwer TWMS copy</li>
+        <li><strong>2. Add Recipients</strong> — Drafts are automatically populated with Solwer TWMS copy</li>
         <li><strong>3. Review &amp; Edit</strong> — Attach collaterals, customize with Bedrock AI, and approve</li>
         <li><strong>4. Send Email Now</strong> — Dispatch cold outreach directly from connected mailbox</li>
         <li><strong>5. Inbound Tracking</strong> — Automated reply tracking, sentiment categorization, and calendar sync</li>

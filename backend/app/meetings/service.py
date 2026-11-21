@@ -161,9 +161,26 @@ class MeetingService:
         results = []
 
         for m in meetings:
+            # Auto-synthesize initial AI meeting analysis & MoM if not yet generated
+            if m.analysis is None:
+                try:
+                    self.analyze_meeting(session, m.id)
+                    session.expire(m)
+                    m = session.get(Meeting, m.id) or m
+                except Exception as e:
+                    logger.debug("Auto-analysis during meeting listing deferred for %s: %s", m.id, e)
+
             lead = session.get(Lead, m.lead_id) if m.lead_id else None
             contact = session.get(Contact, m.contact_id) if m.contact_id else None
             product = session.get(Product, m.product_id) if m.product_id else None
+
+            # Automatically ensure AI analysis & MoM exists for every meeting so sales reps never have to wait
+            if not m.analysis:
+                try:
+                    self.analyze_meeting(session, m.id)
+                    session.expire(m)
+                except Exception as e:
+                    logger.warning("Auto-analysis in list_meetings deferred for %s: %s", m.id, e)
 
             # Filters search string against title or company
             if search and search.strip():
@@ -284,6 +301,7 @@ class MeetingService:
                 "created_at": a.created_at,
             }
 
+        action_items = session.query(MeetingActionItem).filter(MeetingActionItem.meeting_id == meeting_id).order_by(MeetingActionItem.created_at.asc()).all()
         action_items_data = [
             {
                 "id": item.id,
@@ -298,7 +316,7 @@ class MeetingService:
                 "source_timestamp": item.source_timestamp,
                 "created_at": item.created_at,
             }
-            for item in m.action_items
+            for item in action_items
         ]
 
         participants_data = [
@@ -514,7 +532,7 @@ class MeetingService:
         )
 
         # Upsert MeetingAnalysis
-        analysis = meeting.analysis
+        analysis = session.query(MeetingAnalysis).filter(MeetingAnalysis.meeting_id == meeting.id).first()
         if not analysis:
             analysis = MeetingAnalysis(
                 id=new_id(),
@@ -590,6 +608,15 @@ class MeetingService:
 
         session.commit()
         session.refresh(analysis)
+
+        # Phase 9: Sync meeting intelligence and MoM to Zoho CRM
+        try:
+            from app.zoho.service import ZohoService
+            ZohoService(session).sync_meeting_intelligence_to_zoho(meeting.id)
+            session.commit()
+        except Exception as ze:
+            logger.warning("Zoho CRM meeting intelligence sync skipped or deferred: %s", ze)
+
         return analysis
 
     def add_action_item(

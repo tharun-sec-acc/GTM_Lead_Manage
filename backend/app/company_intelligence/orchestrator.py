@@ -252,7 +252,7 @@ def _generate_report_narratives(company_name: str, profile_arn: str | None,
     if not profile_arn or not facts_by_category:
         return "", {}
     instruction = (
-        "You are an executive research synthesis analyst for DENSO sales and enterprise intelligence. "
+        "You are an executive research synthesis analyst for Solwer enterprise sales and GTM intelligence. "
         "Based ONLY on the provided verified company facts, generate an executive company brief. "
         "Return JSON with: "
         "- 'summary': A comprehensive 2-3 paragraph executive summary of the company, covering what they do, their industry presence, operational scale/infrastructure/fleet, key leadership, and strategic direction. "
@@ -307,7 +307,7 @@ def _synthesize_report(job_id: str, company_id: str, limitations: list[str],
             profile_arn=profile_arn,
         )
 
-        # 2. DENSO Product Opportunity Engine (IM, MCE, VDI, TWMS)
+        # 2. Solwer Product Opportunity Engine (TWMS, LOSS_TRACKER_IM, VDI, FLEET_MGMT, MCE, CARBON_MGMT)
         product_opportunities = evaluate_product_opportunities(
             company_name=company_name,
             domain=domain,
@@ -631,4 +631,12 @@ def run_research_job(job_id: str) -> dict:
             job.error = "; ".join(errors)[:1000]
         if company:
             company.latest_job_id, company.last_researched_at = job.id, now()
+
+        # Phase 8: Sync AI Research & Findings to Zoho CRM Note & Account
+        try:
+            from app.zoho.service import ZohoService
+            ZohoService(session).sync_research_to_zoho(job.id)
+        except Exception as ze:
+            logger.warning("Zoho CRM research note sync deferred or skipped: %s", ze)
+
         return {"status": job.status, "report_id": report_id}

@@ -340,6 +340,15 @@ class ResearchFactOverride(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+# Public Booking Models
+from app.booking.models import (  # noqa: E402
+    BookingProfile,
+    BookingAvailability,
+    Booking,
+    BookingReservation,
+    BookingEventLog,
+)
+
 # Unified Meeting Intelligence Models
 from app.meetings.models import (  # noqa: E402
     Meeting,
@@ -349,4 +358,31 @@ from app.meetings.models import (  # noqa: E402
     MeetingTranscriptEntry,
     MeetingAnalysis,
     MeetingActionItem,
+)
+
+# Zoho CRM Integration Models
+from app.zoho.models import (  # noqa: E402
+    ZohoConnection,
+    ZohoOAuthState,
+    ZohoFieldMapping,
+    ZohoRecordMapping,
+    ZohoSyncJob,
+    ZohoSyncLog,
+    ZohoSyncConflict,
+)
+
+# Automotive Market Intelligence & Opportunity Detection Models
+from app.market_intelligence.models import (  # noqa: E402
+    MarketSource,
+    MarketSourceRun,
+    MarketArticle,
+    MarketArticleVersion,
+    MarketCompany,
+    MarketEvent,
+    ProductCatalog,
+    ProductMatchRule,
+    OpportunitySignal,
+    MarketAlert,
+    CompanyWatchlist,
+    MarketFeedback,
 )

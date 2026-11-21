@@ -24,6 +24,7 @@ def generate_available_slots(
     busy_intervals: list[tuple[datetime, datetime]],
     daily_meeting_counts: dict[date, int] | None = None,
     now_utc: datetime | None = None,
+    duration_minutes: int | None = None,
 ) -> list[SlotItem]:
     """
     Generate valid, non-overlapping booking slots for a profile within range_start to range_end.
@@ -68,7 +69,8 @@ def generate_available_slots(
     current_date = start_local.date()
     end_date = end_local.date()
 
-    duration = timedelta(minutes=max(10, profile.duration_minutes))
+    effective_duration = duration_minutes if (duration_minutes and duration_minutes >= 10) else profile.duration_minutes
+    duration = timedelta(minutes=max(10, effective_duration))
     buffer_before = timedelta(minutes=max(0, profile.buffer_before_minutes))
     buffer_after = timedelta(minutes=max(0, profile.buffer_after_minutes))
     step = duration  # standard step matches meeting duration

@@ -1,6 +1,9 @@
 import re
+import logging
 import secrets
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 from typing import Any
 
 from sqlalchemy import and_, select
@@ -234,6 +237,15 @@ class BookingService:
             },
         )
         session.add(log)
+        session.flush()
+
+        # Phase 7: Controlled Zoho CRM Sync for public booking
+        try:
+            from app.zoho.service import ZohoService
+            ZohoService(session).sync_booking_to_zoho(booking.id)
+        except Exception as ze:
+            logger.warning("Zoho CRM booking synchronization deferred or skipped: %s", ze)
+
         session.commit()
         session.refresh(booking)
 

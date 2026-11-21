@@ -350,7 +350,10 @@ def test_daily_budget_and_queue_failure_are_explicit(research, monkeypatch):
 def test_additive_migration_preserves_existing_leads(tmp_path, monkeypatch):
     database_url = f"sqlite:///{tmp_path / 'migration.db'}"
     monkeypatch.setattr(api.settings, "database_url", database_url)
-    config = Config("alembic.ini")
+    import os
+    config = Config("backend/alembic.ini" if os.path.exists("backend/alembic.ini") else "alembic.ini")
+    if not os.path.exists(config.get_main_option("script_location")):
+        config.set_main_option("script_location", "backend/migrations")
     command.upgrade(config, "0009_microsoft_oauth")
     engine = create_engine(database_url)
     factory = sessionmaker(bind=engine, expire_on_commit=False)

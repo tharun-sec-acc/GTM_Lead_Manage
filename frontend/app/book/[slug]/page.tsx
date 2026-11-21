@@ -72,6 +72,7 @@ export default function PublicBookingPage({
   // Timezone & Date
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [selectedDate, setSelectedDate] = useState<string>("");
+  const [selectedDuration, setSelectedDuration] = useState<number>(30);
 
   // Slots State
   const [slots, setSlots] = useState<SlotItem[]>([]);
@@ -124,6 +125,9 @@ export default function PublicBookingPage({
         const data = await res.json();
         if (isMounted) {
           setProfile(data);
+          if (data.duration_minutes) {
+            setSelectedDuration(data.duration_minutes);
+          }
           // Set initial date to tomorrow or today
           const now = new Date();
           now.setDate(now.getDate() + 1);
@@ -164,7 +168,7 @@ export default function PublicBookingPage({
 
         const url = `${API_BASE}/api/public/book/${slug}/availability?start=${encodeURIComponent(
           start
-        )}&end=${encodeURIComponent(end)}&timezone=${encodeURIComponent(timezone)}`;
+        )}&end=${encodeURIComponent(end)}&timezone=${encodeURIComponent(timezone)}&duration_minutes=${selectedDuration}`;
 
         const res = await fetch(url);
         if (!res.ok) {
@@ -189,7 +193,7 @@ export default function PublicBookingPage({
     return () => {
       isMounted = false;
     };
-  }, [profile, selectedDate, timezone, slug]);
+  }, [profile, selectedDate, timezone, selectedDuration, slug]);
 
   // Reservation hold countdown timer
   useEffect(() => {
@@ -439,7 +443,7 @@ export default function PublicBookingPage({
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span className="badge" style={{ background: "#f1f5f9", color: "#334155", border: "1px solid #cbd5e1" }}>
-            ⏱ {profile.duration_minutes} mins
+            ⏱ {selectedDuration === 60 ? "1 hour" : `${selectedDuration} mins`}
           </span>
           <span className="badge" style={{ background: "#ecfdf5", color: "#059669", border: "1px solid #a7f3d0" }}>
             Google Meet
@@ -517,6 +521,41 @@ export default function PublicBookingPage({
           {/* Step 1: Slot Selection (if no active reservation) */}
           {!reservationToken ? (
             <div>
+              {/* Meeting Length Selector */}
+              <div style={{ marginBottom: 16, padding: "12px 14px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px", display: "block", marginBottom: 8 }}>
+                  Meeting Length:
+                </span>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[15, 30, 45, 60].map((mins) => {
+                    const isSelected = selectedDuration === mins;
+                    return (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => {
+                          setSelectedDuration(mins);
+                          setSelectedSlot(null);
+                        }}
+                        style={{
+                          padding: "6px 14px",
+                          borderRadius: 20,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          border: isSelected ? "2px solid var(--red)" : "1px solid #cbd5e1",
+                          background: isSelected ? "#fee2e2" : "#ffffff",
+                          color: isSelected ? "var(--red)" : "#334155",
+                          cursor: "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        ⏱ {mins === 60 ? "1 hour" : `${mins} mins`}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                 <h3 style={{ margin: 0, fontSize: 17, color: "#1e293b" }}>
                   Available Times for {selectedDate ? new Date(selectedDate).toLocaleDateString([], { month: "short", day: "numeric", weekday: "short" }) : "Selected Date"}

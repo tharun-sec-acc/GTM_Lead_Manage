@@ -110,8 +110,24 @@ export default function IntelligenceReport({
   // Extract structured intelligence items
   const onePage = report?.one_page_summary;
   const analysis = report?.analysis_data;
-  const productOpps = report?.product_opportunities || [];
+  const productOpps = (report?.product_opportunities && report.product_opportunities.length > 0)
+    ? report.product_opportunities
+    : (onePage?.solwer_product_opportunities || onePage?.denso_product_opportunities || []);
   const whatChanged = report?.what_changed || [];
+
+  function formatIndustryList(industry: any): string {
+    if (!industry) return "Industrial Operations";
+    if (Array.isArray(industry)) {
+      return industry
+        .map(item => String(item).replace(/([a-z0-9&])([A-Z])/g, "$1 $2").trim())
+        .filter(Boolean)
+        .join(" · ");
+    }
+    if (typeof industry === "string") {
+      return industry.replace(/([a-z0-9&])([A-Z])/g, "$1, $2").trim();
+    }
+    return String(industry);
+  }
 
   function exportReport() {
     if (!report) return;
@@ -163,8 +179,8 @@ export default function IntelligenceReport({
         <span>Distinct domains</span>
       </div>
       <div>
-        <strong>{productOpps.length || 4}</strong>
-        <span>DENSO solutions evaluated</span>
+        <strong>{productOpps.length || 6}</strong>
+        <span>Solwer solutions evaluated</span>
       </div>
     </div>
 
@@ -177,7 +193,7 @@ export default function IntelligenceReport({
         <UiIcon name="companies" size={16} /> Strategic Analysis & SWOT
       </button>
       <button className={`main-view-tab ${mainView === "denso_fit" ? "active" : ""}`} onClick={() => setMainView("denso_fit")}>
-        <UiIcon name="grid" size={16} /> DENSO Product Fit ({productOpps.length || 4})
+        <UiIcon name="grid" size={16} /> Solwer Product Fit ({productOpps.length || 6})
       </button>
       <button className={`main-view-tab ${mainView === "diff" ? "active" : ""}`} onClick={() => setMainView("diff")}>
         <UiIcon name="refresh" size={16} /> What Changed Since Last Run {whatChanged.length > 0 && `(${whatChanged.length})`}
@@ -198,10 +214,10 @@ export default function IntelligenceReport({
         <div className="brief-header">
           <div className="brief-title">
             <span className="badge" style={{ background: "#fee2e2", color: "var(--red)", fontWeight: 700, marginBottom: "8px" }}>
-              DENSO GTM EXECUTIVE BRIEFING
+              SOLWER GTM EXECUTIVE BRIEFING
             </span>
             <h2>{onePage?.company_name || "Target Enterprise"}</h2>
-            <p>{onePage?.domain} · {onePage?.overview?.industry || "Industrial Operations"} · Headquarters: {onePage?.overview?.headquarters || "India"}</p>
+            <p>{onePage?.domain} · {formatIndustryList(onePage?.overview?.industry)} · Headquarters: {onePage?.overview?.headquarters || "India"}</p>
           </div>
           <div className="brief-actions">
             <span className="badge" style={{ background: "#ecfdf5", color: "#065f46", fontWeight: 700, padding: "8px 14px", fontSize: "13px" }}>
@@ -220,8 +236,8 @@ export default function IntelligenceReport({
             <h4>Scale & Footprint</h4>
             <div className="brief-metric-val">{onePage?.business_scale?.revenue || "Filings Disclosed"}</div>
             <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>Annual Reported Revenue</p>
-            <p><strong>Fleet:</strong> {onePage?.business_scale?.fleet_scale || "Commercial fleet and dispatch networks."}</p>
-            <p style={{ marginTop: "4px" }}><strong>Facilities:</strong> {onePage?.business_scale?.facilities || "Manufacturing and distribution depots."}</p>
+            <p><strong>Fleet:</strong> {onePage?.business_scale?.fleet_scale ? String(onePage.business_scale.fleet_scale).replace(/^[a-z_]+:\s*/i, "") : "Commercial fleet and dispatch networks."}</p>
+            <p style={{ marginTop: "4px" }}><strong>Facilities:</strong> {onePage?.business_scale?.facilities ? String(onePage.business_scale.facilities).replace(/^[a-z_]+:\s*/i, "") : "Manufacturing and distribution depots."}</p>
           </div>
           <div className="brief-card">
             <h4>Recent Developments</h4>
@@ -392,65 +408,80 @@ export default function IntelligenceReport({
     )}
 
     {/* =========================================================
-        VIEW 3: DENSO PRODUCT FIT (IM, MCE, VDI, TWMS)
+        VIEW 3: SOLWER PRODUCT FIT (6 CORE PRODUCTS)
         ========================================================= */}
     {mainView === "denso_fit" && (
       <div>
         <div style={{ marginBottom: "18px" }}>
-          <h3 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 6px 0" }}>DENSO Solution Opportunities</h3>
+          <h3 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 6px 0" }}>Solwer Solution Opportunities</h3>
           <p style={{ color: "#64748b", fontSize: "14px", margin: 0 }}>
-            Automated alignment of evidenced company footprint, facilities, and fleet operations with DENSO&apos;s 4 core B2B solutions.
+            Automated alignment of evidenced company footprint, facilities, and fleet operations with Solwer&apos;s 6 core B2B solutions.
           </p>
         </div>
 
         <div className="product-fit-grid">
           {productOpps.map((opp: any, idx: number) => {
-            const fitLevel = opp.relevance_level === "strong_evidence_backed" ? "strong" : opp.relevance_level === "moderate_evidence" ? "moderate" : "exploratory";
+            const pCode = opp.product_code || opp.product || `P0${idx + 1}`;
+            const pName = opp.product_name || opp.full_name || pCode;
+            const pLevel = opp.relevance_level || opp.classification || "potential_opportunity";
+            const fitLevel = pLevel === "strong_evidence_backed" ? "strong" : pLevel === "moderate_evidence" ? "moderate" : "exploratory";
+            const fitScore = opp.fit_score || (opp.confidence ? Math.round(opp.confidence * 100) : fitLevel === "strong" ? 88 : fitLevel === "moderate" ? 70 : 45);
+            const summary = opp.opportunity_summary || opp.rationale || opp.summary || "Operational alignment with verified company profile.";
+            const dept = opp.recommended_department || opp.target_department || "Operations & Logistics";
+            const stakeholder = opp.recommended_stakeholder || opp.target_stakeholder || "Head of Operations";
+            const talkTrack = opp.sales_talk_track || opp.talk_track || "";
+            const questions = opp.discovery_questions || [];
+            const action = opp.next_recommended_action || opp.action || "Reach out to schedule technical discovery call.";
+
             return (
-              <div key={opp.product_code || idx} className={`product-fit-card ${fitLevel}`}>
+              <div key={pCode || idx} className={`product-fit-card ${fitLevel}`}>
                 <div className="product-card-header">
                   <div>
-                    <span className="product-code-pill">{opp.product_code}</span>
-                    <h3 style={{ fontSize: "17px", fontWeight: 700, margin: "8px 0 4px 0" }}>{opp.product_name}</h3>
-                    <small style={{ color: "#64748b" }}>Fit Score: <strong>{opp.fit_score}%</strong></small>
+                    <span className="product-code-pill">{pCode}</span>
+                    <h3 style={{ fontSize: "17px", fontWeight: 700, margin: "8px 0 4px 0" }}>{pName}</h3>
+                    <small style={{ color: "#64748b" }}>Fit Score: <strong>{fitScore}%</strong></small>
                   </div>
                   <span className={`product-fit-badge ${fitLevel}`}>
-                    {opp.relevance_level === "strong_evidence_backed" ? "Strong Fit" : opp.relevance_level === "moderate_evidence" ? "Moderate Fit" : "Exploratory Fit"}
+                    {pLevel === "strong_evidence_backed" ? "Strong Fit" : pLevel === "moderate_evidence" ? "Moderate Fit" : "Exploratory Fit"}
                   </span>
                 </div>
 
                 <div>
                   <h4 style={{ fontSize: "12px", textTransform: "uppercase", color: "#64748b", margin: "0 0 4px 0" }}>Opportunity Summary</h4>
-                  <p style={{ fontSize: "13px", color: "#334155", lineHeight: 1.6, margin: 0 }}>{opp.opportunity_summary}</p>
+                  <p style={{ fontSize: "13px", color: "#334155", lineHeight: 1.6, margin: 0 }}>{summary}</p>
                 </div>
 
                 <div style={{ background: "#f8fafc", padding: "12px", borderRadius: "6px" }}>
                   <p style={{ fontSize: "12px", color: "#475569", margin: "0 0 4px 0" }}>
-                    <strong>Target Department:</strong> {opp.recommended_department}
+                    <strong>Target Department:</strong> {dept}
                   </p>
                   <p style={{ fontSize: "12px", color: "#475569", margin: 0 }}>
-                    <strong>Decision Maker:</strong> {opp.recommended_stakeholder}
+                    <strong>Decision Maker:</strong> {stakeholder}
                   </p>
                 </div>
 
-                <div>
-                  <h4 style={{ fontSize: "12px", textTransform: "uppercase", color: "var(--red)", margin: "0 0 6px 0" }}>Sales Talk-Track</h4>
-                  <div className="talk-track-box">
-                    &ldquo;{opp.sales_talk_track}&rdquo;
+                {talkTrack ? (
+                  <div>
+                    <h4 style={{ fontSize: "12px", textTransform: "uppercase", color: "var(--red)", margin: "0 0 6px 0" }}>Sales Talk-Track</h4>
+                    <div className="talk-track-box">
+                      &ldquo;{talkTrack}&rdquo;
+                    </div>
                   </div>
-                </div>
+                ) : null}
 
-                <div>
-                  <h4 style={{ fontSize: "12px", textTransform: "uppercase", color: "#475569", margin: "0 0 6px 0" }}>Discovery Questions for Call</h4>
-                  <ul className="discovery-questions-list">
-                    {(opp.discovery_questions || []).map((q: string, qIdx: number) => (
-                      <li key={qIdx}>{q}</li>
-                    ))}
-                  </ul>
-                </div>
+                {questions.length > 0 ? (
+                  <div>
+                    <h4 style={{ fontSize: "12px", textTransform: "uppercase", color: "#475569", margin: "0 0 6px 0" }}>Discovery Questions for Call</h4>
+                    <ul className="discovery-questions-list">
+                      {questions.map((q: string, qIdx: number) => (
+                        <li key={qIdx}>{q}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
 
                 <div style={{ marginTop: "auto", borderTop: "1px solid #f1f5f9", paddingTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <small style={{ color: "#64748b" }}>Action: <strong>{opp.next_recommended_action}</strong></small>
+                  <small style={{ color: "#64748b" }}>Action: <strong>{action}</strong></small>
                 </div>
               </div>
             );
@@ -728,7 +759,7 @@ export default function IntelligenceReport({
     )}
 
     <p className="report-footer">
-      <UiIcon name="link" size={16} /> DENSO Autonomous Intelligence: Deep crawl operates with bounded recursive discovery, document &amp; PDF extraction, and strict evidence grounding.
+      <UiIcon name="link" size={16} /> Solwer Autonomous Intelligence: Deep crawl operates with bounded recursive discovery, document &amp; PDF extraction, and strict evidence grounding.
     </p>
   </section>;
 }
