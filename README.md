@@ -371,3 +371,4 @@ For local service logs, use `docker compose logs api`, `docker compose logs work
 ## Future end-to-end meeting flow
 
 The intended next stages are: prospect expresses interest -> sales-approved scheduling invitation -> local-test booking page and token -> Graph availability recheck -> idempotent Outlook event and returned Teams join URL -> tenant-enabled recording/transcript handling -> private OneDrive/SharePoint and/or S3 archive -> reviewed Bedrock insights and MoM -> approved Jira tasks, owners, lead-stage history and turnaround tracking. These are roadmap items, not implemented functionality. Each stage requires implementation, official endpoint/permission verification, tests, appropriate tenant consent and its own review. The current localhost-only app cannot be opened by an external prospect; real bookings would require a separately approved HTTPS deployment and security design. No public tunnel or proxy is authorized for this pilot.
+# GTM_Lead_Manage
