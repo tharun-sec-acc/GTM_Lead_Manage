@@ -83,4 +83,4 @@ Application rollback is preferred; keep the additive schema.
   Product scoping does not change any sending rule.
 - Attachment storage uses the private local volume adapter (`/app/attachments`); no S3 backend and
   no public URL is exposed.
-- The application stays unauthenticated and loopback-only. Do not publish the ports.
+- The application requires a login by default (an optional anonymous fallback exists) and stays loopback-only. Do not publish the ports.

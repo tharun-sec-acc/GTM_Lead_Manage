@@ -89,6 +89,31 @@ class Settings(BaseSettings):
     auth_enabled: bool = True
     auth_allow_anonymous_fallback: bool = True  # Allows legacy tests to fallback to default tenant seamlessly
 
+    # Billing & Subscription Foundation
+    billing_default_plan_code: str = "growth"
+    billing_currency: str = "INR"
+    # Kill switch: when false, metered limits are reported but never enforced.
+    billing_enforce_limits: bool = True
+
+    # Advertising & Lead Capture (Release 3)
+    advertising_enabled: bool = True
+    advertising_sync_enabled: bool = True
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    meta_webhook_verify_token: str = ""
+    meta_graph_version: str = "v21.0"
+    google_ads_client_id: str = ""
+    google_ads_client_secret: str = ""
+    google_ads_developer_token: str = ""
+    google_ads_login_customer_id: str = ""
+    google_ads_api_version: str = "v19"
+    google_lead_form_key: str = ""
+
+    # Omnichannel inbox (Release 4)
+    # Kill switch: no email/WhatsApp/SMS message leaves the system unless true.
+    conversation_send_enabled: bool = False
+    sms_inbound_webhook_key: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

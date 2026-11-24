@@ -49,8 +49,7 @@ All isolation is enforced server-side; the UI never filters data it should not h
 5. Removing a product-lead association keeps the master company, its contacts, campaigns, messages,
    replies and research. Products are archived, never deleted.
 
-Product scoping is workflow consistency, not authentication. The application is an unauthenticated
-local pilot; anyone with local access can use the global management routes.
+Product scoping is workflow consistency, not tenant authorization. The application requires a login by default (an anonymous fallback is configurable), but any signed-in member can use the global management routes; see [authentication and organizations](authentication-and-organizations.md).
 
 ## Workspace structure
 

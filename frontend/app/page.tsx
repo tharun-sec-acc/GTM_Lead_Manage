@@ -3,103 +3,190 @@
 import Link from "next/link";
 import { useAuth } from "../lib/auth-context";
 
+const features = [
+  {
+    title: "User-owned OAuth outreach",
+    body:
+      "Connect authorized Google Workspace or Microsoft 365 accounts. Send personalized outreach from your own mailbox and keep replies in one reviewable inbox.",
+    icon: "mail",
+    tone: "rose",
+  },
+  {
+    title: "Unified meeting copilot",
+    body:
+      "Run Microsoft Teams and Google Meet from one calendar. Check organizer availability, publish booking links and generate AI minutes with action items.",
+    icon: "clock",
+    tone: "emerald",
+  },
+  {
+    title: "Apollo & deep intelligence",
+    body:
+      "Enrich companies with decision-makers from Apollo, then verify claims with cited research from public crawlers and AWS Bedrock extraction.",
+    icon: "spark",
+    tone: "amber",
+  },
+  {
+    title: "Multi-sheet Excel imports",
+    body:
+      "Map each worksheet independently, import in the background and review row-level reports with duplicate detection and import provenance.",
+    icon: "layers",
+    tone: "sky",
+  },
+  {
+    title: "Roles & tenant boundaries",
+    body:
+      "Invite reps, managers and admins with role-based access. Every lead, campaign and booking is scoped to its organization.",
+    icon: "shield",
+    tone: "violet",
+  },
+  {
+    title: "Zoho CRM sync",
+    body:
+      "Keep leads, contacts and deal stages aligned through editable field mappings, conflict policies and scheduled inbound/outbound sync jobs.",
+    icon: "sync",
+    tone: "blue",
+  },
+] as const;
+
+const stack = [
+  "Google Workspace",
+  "Microsoft 365",
+  "Zoho CRM",
+  "AWS Bedrock",
+  "Apollo",
+  "PostgreSQL",
+];
+
+const flow = [
+  {
+    title: "Import and qualify",
+    body: "Bring in spreadsheets, confirm the official domain and keep duplicate candidates visible for review.",
+  },
+  {
+    title: "Research with evidence",
+    body: "Collect cited company facts, financial qualifiers and leadership signals — every claim keeps its source.",
+  },
+  {
+    title: "Reach and close",
+    body: "Approve drafts, book the meeting, review AI minutes and push the qualified deal into Zoho CRM.",
+  },
+];
+
+function Icon({ name }: { name: string }) {
+  const common = {
+    width: 21,
+    height: 21,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+  switch (name) {
+    case "mail":
+      return (
+        <svg {...common}>
+          <rect x="3" y="5" width="18" height="14" rx="2.5" />
+          <path d="m3.5 7 8.5 6 8.5-6" />
+        </svg>
+      );
+    case "clock":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7.5V12l3.2 1.9" />
+        </svg>
+      );
+    case "spark":
+      return (
+        <svg {...common}>
+          <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />
+          <path d="M18.5 14.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9.9-2.1Z" />
+        </svg>
+      );
+    case "layers":
+      return (
+        <svg {...common}>
+          <path d="m12 3 8.5 4.7L12 12.4 3.5 7.7 12 3Z" />
+          <path d="m3.5 12 8.5 4.7 8.5-4.7" />
+          <path d="m3.5 16.3 8.5 4.7 8.5-4.7" />
+        </svg>
+      );
+    case "shield":
+      return (
+        <svg {...common}>
+          <path d="M12 3.2 5 6v5.4c0 4.2 2.9 7.6 7 9.4 4.1-1.8 7-5.2 7-9.4V6l-7-2.8Z" />
+          <path d="m9.2 12.1 2 2 3.6-3.9" />
+        </svg>
+      );
+    case "sync":
+      return (
+        <svg {...common}>
+          <path d="M20 11a8 8 0 0 0-13.7-4.6L3.5 9" />
+          <path d="M3.5 4.5V9H8" />
+          <path d="M4 13a8 8 0 0 0 13.7 4.6l2.8-2.6" />
+          <path d="M20.5 19.5V15H16" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+function Check() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m4 12.5 5 5L20 6.5" />
+    </svg>
+  );
+}
+
 export default function SaaSMarketingHomePage() {
   const { user, organization, isAuthenticated, isLoading } = useAuth();
+  const signedIn = !isLoading && isAuthenticated && user;
 
   return (
-    <div className="landing-page" style={{ minHeight: "100vh", backgroundColor: "#0b0f17", color: "#f8fafc", fontFamily: "system-ui, -apple-system, sans-serif" }}>
-      {/* 1. Global Navigation Bar */}
-      <header style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 50,
-        backgroundColor: "rgba(11, 15, 23, 0.85)",
-        backdropFilter: "blur(12px)",
-        borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
-        padding: "16px 24px",
-      }}>
-        <div style={{ maxWidth: "1200px", margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{
-              width: "38px",
-              height: "38px",
-              borderRadius: "10px",
-              background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 0 20px rgba(99, 102, 241, 0.35)",
-            }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+    <div className="landing">
+      <header className="site-header">
+        <div className="site-header-inner">
+          <Link href="/" className="site-brand" aria-label="Solwer GTM home">
+            <span className="site-brand-mark">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 2.6 2.8 7.3 12 12l9.2-4.7L12 2.6Z" />
+                <path d="m2.8 16.7 9.2 4.7 9.2-4.7" />
+                <path d="m2.8 12 9.2 4.7 9.2-4.7" />
               </svg>
-            </div>
-            <div>
-              <div style={{ fontSize: "1.2rem", fontWeight: "800", letterSpacing: "-0.02em", color: "#ffffff", display: "flex", alignItems: "center", gap: "6px" }}>
-                SOLWER <span style={{ fontSize: "0.75rem", padding: "2px 6px", borderRadius: "4px", background: "rgba(99, 102, 241, 0.2)", color: "#818cf8", border: "1px solid rgba(99, 102, 241, 0.4)" }}>GTM</span>
-              </div>
-              <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>Sales Intelligence Platform</div>
-            </div>
-          </div>
+            </span>
+            <span>
+              <span className="site-brand-name">
+                SOLWER
+                <span className="site-brand-tag">GTM</span>
+              </span>
+              <span className="site-brand-sub">Sales Intelligence Platform</span>
+            </span>
+          </Link>
 
-          <nav style={{ display: "flex", alignItems: "center", gap: "28px" }}>
-            <a href="#features" style={{ color: "#94a3b8", textDecoration: "none", fontSize: "0.95rem", fontWeight: "500", transition: "color 0.2s" }}>Features</a>
-            <a href="#outreach" style={{ color: "#94a3b8", textDecoration: "none", fontSize: "0.95rem", fontWeight: "500", transition: "color 0.2s" }}>Outreach & Email</a>
-            <a href="#meetings" style={{ color: "#94a3b8", textDecoration: "none", fontSize: "0.95rem", fontWeight: "500", transition: "color 0.2s" }}>Meetings Copilot</a>
-            <a href="#about" style={{ color: "#94a3b8", textDecoration: "none", fontSize: "0.95rem", fontWeight: "500", transition: "color 0.2s" }}>About</a>
+          <nav className="site-links" aria-label="Marketing navigation">
+            <a href="#features">Features</a>
+            <a href="#outreach">Outreach &amp; Email</a>
+            <a href="#meetings">Meetings Copilot</a>
+            <a href="#about">About</a>
           </nav>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-            {!isLoading && isAuthenticated && user ? (
-              <Link
-                href="/dashboard"
-                style={{
-                  padding: "10px 20px",
-                  borderRadius: "8px",
-                  background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)",
-                  color: "#ffffff",
-                  textDecoration: "none",
-                  fontWeight: "600",
-                  fontSize: "0.95rem",
-                  boxShadow: "0 4px 14px rgba(79, 70, 229, 0.4)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                }}
-              >
-                <span>Dashboard ({organization?.name || "Workspace"})</span>
-                <span>&rarr;</span>
+          <div className="site-actions">
+            {signedIn ? (
+              <Link href="/dashboard" className="btn-cta">
+                Open dashboard <span aria-hidden="true">→</span>
               </Link>
             ) : (
               <>
-                <Link
-                  href="/login"
-                  style={{
-                    color: "#e2e8f0",
-                    textDecoration: "none",
-                    fontSize: "0.95rem",
-                    fontWeight: "600",
-                    padding: "8px 16px",
-                    borderRadius: "6px",
-                    transition: "background 0.2s",
-                  }}
-                >
-                  Sign In
+                <Link href="/login" className="btn-ghost">
+                  Sign in
                 </Link>
-                <Link
-                  href="/register"
-                  style={{
-                    padding: "9px 20px",
-                    borderRadius: "8px",
-                    background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
-                    color: "#ffffff",
-                    textDecoration: "none",
-                    fontWeight: "600",
-                    fontSize: "0.95rem",
-                    boxShadow: "0 4px 16px rgba(99, 102, 241, 0.35)",
-                  }}
-                >
-                  Get Started Free
+                <Link href="/register" className="btn-cta">
+                  Get started free
                 </Link>
               </>
             )}
@@ -107,265 +194,298 @@ export default function SaaSMarketingHomePage() {
         </div>
       </header>
 
-      {/* 2. Hero Section */}
-      <section style={{ padding: "80px 24px 60px", maxWidth: "1100px", margin: "0 auto", textAlign: "center" }}>
-        <div style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "8px",
-          padding: "6px 14px",
-          borderRadius: "9999px",
-          background: "rgba(99, 102, 241, 0.12)",
-          border: "1px solid rgba(99, 102, 241, 0.3)",
-          color: "#a5b4fc",
-          fontSize: "0.85rem",
-          fontWeight: "600",
-          marginBottom: "24px",
-        }}>
-          <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#10b981" }} />
-          Multi-Tenant Sales Intelligence & Direct Outreach SaaS
+      <section className="hero">
+        <div>
+          <span className="hero-eyebrow">
+            <span className="dot" /> Multi-tenant sales intelligence &amp; outreach
+          </span>
+          <h1 className="hero-title">
+            Turn market signals into <span className="grad">qualified conversations</span>
+          </h1>
+          <p className="hero-sub">
+            Solwer GTM connects lead import, cited company research, market intelligence, human-approved email
+            and meeting follow-through in one workspace — so every conversation starts with evidence.
+          </p>
+          <div className="hero-ctas">
+            <Link href={signedIn ? "/dashboard" : "/register"} className="btn-cta large">
+              {signedIn ? `Open ${organization?.name || "workspace"}` : "Create your workspace"} <span aria-hidden="true">→</span>
+            </Link>
+            <Link href="/login" className="btn-ghost large">
+              Sign in to your organization
+            </Link>
+          </div>
+          <div className="hero-note">
+            <span><Check /> Human approval before any email sends</span>
+            <span><Check /> Organization-scoped records</span>
+            <span><Check /> Your own mailbox &amp; calendar</span>
+          </div>
         </div>
 
-        <h1 style={{
-          fontSize: "clamp(2.5rem, 5vw, 4rem)",
-          fontWeight: "800",
-          lineHeight: "1.15",
-          letterSpacing: "-0.03em",
-          marginBottom: "24px",
-          background: "linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%)",
-          WebkitBackgroundClip: "text",
-          WebkitTextFillColor: "transparent",
-        }}>
-          Supercharge Your GTM Pipeline With Evidence-Grounded Intelligence
-        </h1>
-
-        <p style={{
-          fontSize: "1.25rem",
-          lineHeight: "1.6",
-          color: "#94a3b8",
-          maxWidth: "760px",
-          margin: "0 auto 40px",
-        }}>
-          From automated lead discovery and deep executive intelligence to native email outreach through your own Gmail &amp; Outlook accounts. All in one multi-tenant workspace.
-        </p>
-
-        <div style={{ display: "flex", justifyContent: "center", gap: "16px", flexWrap: "wrap" }}>
-          <Link
-            href="/register"
-            style={{
-              padding: "14px 32px",
-              borderRadius: "10px",
-              background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)",
-              color: "#ffffff",
-              textDecoration: "none",
-              fontWeight: "700",
-              fontSize: "1.05rem",
-              boxShadow: "0 6px 20px rgba(79, 70, 229, 0.45)",
-            }}
-          >
-            Start Free 14-Day Trial &rarr;
-          </Link>
-          <Link
-            href="/login"
-            style={{
-              padding: "14px 28px",
-              borderRadius: "10px",
-              backgroundColor: "rgba(255, 255, 255, 0.05)",
-              color: "#f1f5f9",
-              border: "1px solid rgba(255, 255, 255, 0.15)",
-              textDecoration: "none",
-              fontWeight: "600",
-              fontSize: "1.05rem",
-            }}
-          >
-            Access Organization
-          </Link>
+        <div className="hero-panel" aria-hidden="true">
+          <div className="hero-panel-inner">
+            <div className="hero-panel-top">
+              <span className="hero-panel-dots"><i /><i /><i /></span>
+              <span className="hero-panel-title">Opportunity radar</span>
+              <span className="hero-panel-badge">Live</span>
+            </div>
+            <div className="hero-rows">
+              <div className="hero-row">
+                <div>
+                  <strong>Fleet operator expands regional depot</strong>
+                  <small>Operational signal · Logistics · Watchlist</small>
+                </div>
+                <div className="score">
+                  <span className="score-bar"><i style={{ width: "86%" }} /></span>
+                  <span className="score-val">86</span>
+                </div>
+              </div>
+              <div className="hero-row">
+                <div>
+                  <strong>OEM announces new assembly line</strong>
+                  <small>Production signal · Manufacturing</small>
+                </div>
+                <div className="score">
+                  <span className="score-bar"><i style={{ width: "74%" }} /></span>
+                  <span className="score-val">74</span>
+                </div>
+              </div>
+              <div className="hero-row">
+                <div>
+                  <strong>Tier-1 supplier reports emission targets</strong>
+                  <small>Compliance signal · Sustainability</small>
+                </div>
+                <div className="score">
+                  <span className="score-bar cool"><i style={{ width: "61%" }} /></span>
+                  <span className="score-val">61</span>
+                </div>
+              </div>
+            </div>
+            <div className="hero-panel-foot">
+              <span>Scored with a transparent points breakdown</span>
+              <b>Evidence attached</b>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* 3. Key Feature Pillars */}
-      <section id="features" style={{ padding: "60px 24px", maxWidth: "1200px", margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: "50px" }}>
-          <h2 style={{ fontSize: "2.2rem", fontWeight: "700", color: "#f8fafc", marginBottom: "12px" }}>
-            Engineered for Modern Enterprise Sales Teams
+      <div className="stack-strip">
+        <div className="stack-strip-inner">
+          <span className="stack-strip-label">Works with</span>
+          <div className="stack-strip-items">
+            {stack.map(item => (
+              <span key={item} className="stack-chip">{item}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <section className="landing-section tight" aria-labelledby="flow-title">
+        <div className="section-head">
+          <span className="section-kicker">How it works</span>
+          <h2 id="flow-title" className="mkt-title">
+            One loop from list to closed deal
           </h2>
-          <p style={{ color: "#94a3b8", fontSize: "1.1rem" }}>Everything you need to find, research, reach, and close high-value accounts.</p>
+          <p className="section-copy">
+            Every stage keeps its sources, approvals and history, so sales can move quickly without losing
+            accountability.
+          </p>
         </div>
+        <div className="flow-grid">
+          {flow.map((step, index) => (
+            <article key={step.title} className="flow-step">
+              <span className="flow-index">{String(index + 1).padStart(2, "0")}</span>
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+            </article>
+          ))}
+        </div>
+      </section>
 
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-          gap: "24px",
-        }}>
-          {/* Card 1 */}
-          <div style={{
-            backgroundColor: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-            borderRadius: "16px",
-            padding: "32px",
-          }}>
-            <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(99, 102, 241, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2">
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                <polyline points="22,6 12,13 2,6" />
-              </svg>
-            </div>
-            <h3 style={{ fontSize: "1.3rem", fontWeight: "700", marginBottom: "10px", color: "#ffffff" }}>User-Owned OAuth Outreach</h3>
-            <p style={{ color: "#94a3b8", lineHeight: "1.6", fontSize: "0.95rem" }}>
-              Connect your authorized Google Workspace or Microsoft 365 Outlook accounts. Send personalized outreach emails that land in customer inboxes and sync to your own Sent folder.
+      <section id="features" className="landing-section" aria-labelledby="features-title">
+        <div className="section-head">
+          <span className="section-kicker">Platform</span>
+          <h2 id="features-title" className="mkt-title">
+            Engineered for modern enterprise sales teams
+          </h2>
+          <p className="section-copy">
+            Everything you need to find, research, reach and close high-value accounts — without stitching
+            together six disconnected tools.
+          </p>
+        </div>
+        <div className="feature-grid">
+          {features.map(feature => (
+            <article key={feature.title} className="feature-card">
+              <span className={`feature-icon tone-${feature.tone}`}>
+                <Icon name={feature.icon} />
+              </span>
+              <h3>{feature.title}</h3>
+              <p>{feature.body}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="outreach" className="landing-section" aria-labelledby="outreach-title">
+        <div className="split">
+          <div className="split-copy">
+            <span className="section-kicker">Outreach &amp; email</span>
+            <h2 id="outreach-title">Personal, approved, and sent from your own mailbox</h2>
+            <p>
+              Sequence drafts are generated from reviewed research facts, then held for human approval. Sending
+              runs through your connected Gmail or Outlook account, with unsubscribe, suppression and inbox
+              checks in front of every attempt.
             </p>
+            <ul className="check-list">
+              <li><Check /> Exact-draft approval, with edits invalidating approval</li>
+              <li><Check /> Independent recipient threads — never shared CC or BCC</li>
+              <li><Check /> Replies, opt-outs and hard bounces stop follow-ups automatically</li>
+              <li><Check /> Rolling send budget and clear SMTP-acceptance records</li>
+            </ul>
           </div>
-
-          {/* Card 2 */}
-          <div style={{
-            backgroundColor: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-            borderRadius: "16px",
-            padding: "32px",
-          }}>
-            <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(16, 185, 129, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 6v6l4 2" />
-              </svg>
+          <div className="mock-card" aria-hidden="true">
+            <div className="mock-head">
+              Draft review
+              <span className="mock-pill">Awaiting approval</span>
             </div>
-            <h3 style={{ fontSize: "1.3rem", fontWeight: "700", marginBottom: "10px", color: "#ffffff" }}>Unified Meeting Copilot</h3>
-            <p style={{ color: "#94a3b8", lineHeight: "1.6", fontSize: "0.95rem" }}>
-              Support for both Microsoft Teams and Google Meet. Automatically check organizer calendar availability, generate booking links, and produce AI meeting minutes.
-            </p>
-          </div>
-
-          {/* Card 3 */}
-          <div style={{
-            backgroundColor: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-            borderRadius: "16px",
-            padding: "32px",
-          }}>
-            <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(244, 63, 94, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fb7185" strokeWidth="2">
-                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-              </svg>
+            <div className="mock-to">
+              <span>To</span>
+              <b>Logistics VP · example-manufacturing.com</b>
             </div>
-            <h3 style={{ fontSize: "1.3rem", fontWeight: "700", marginBottom: "10px", color: "#ffffff" }}>Apollo &amp; Deep Intelligence</h3>
-            <p style={{ color: "#94a3b8", lineHeight: "1.6", fontSize: "0.95rem" }}>
-              Enrich prospective companies with verified decision-maker contacts from Apollo.io and autonomous public crawler agents powered by AWS Bedrock AI.
-            </p>
-          </div>
-
-          {/* Card 4 */}
-          <div style={{
-            backgroundColor: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-            borderRadius: "16px",
-            padding: "32px",
-          }}>
-            <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(234, 179, 8, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="2">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
+            <div className="mock-body">
+              Hi Priya,
+              <br /><br />
+              I noticed your Pune expansion adds two distribution hubs. Teams running multi-depot dispatch
+              usually lose visibility between the yard and the line — <span className="hl">our TWMS pilot cut
+              transit exceptions in a comparable network</span>.
+              <br /><br />
+              Worth a 20-minute review of the rollout plan?
             </div>
-            <h3 style={{ fontSize: "1.3rem", fontWeight: "700", marginBottom: "10px", color: "#ffffff" }}>Multi-Sheet Excel Lead Imports</h3>
-            <p style={{ color: "#94a3b8", lineHeight: "1.6", fontSize: "0.95rem" }}>
-              Upload massive lead lists with intelligent column mapping, deduplication across company keys, and instant organization-scoped data isolation.
-            </p>
-          </div>
-
-          {/* Card 5 */}
-          <div style={{
-            backgroundColor: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-            borderRadius: "16px",
-            padding: "32px",
-          }}>
-            <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(168, 85, 247, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c084fc" strokeWidth="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
+            <div className="mock-actions">
+              <span className="mock-status"><i /> 3 cited facts attached</span>
+              <span className="mock-mini-btn">Approve &amp; schedule</span>
             </div>
-            <h3 style={{ fontSize: "1.3rem", fontWeight: "700", marginBottom: "10px", color: "#ffffff" }}>Enterprise RBAC &amp; Tenant Security</h3>
-            <p style={{ color: "#94a3b8", lineHeight: "1.6", fontSize: "0.95rem" }}>
-              Invite sales reps, managers, and admins with strict role-based access control. Every record is protected with row-level organization boundaries.
-            </p>
-          </div>
-
-          {/* Card 6 */}
-          <div style={{
-            backgroundColor: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
-            borderRadius: "16px",
-            padding: "32px",
-          }}>
-            <div style={{ width: "48px", height: "48px", borderRadius: "12px", background: "rgba(59, 130, 246, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: "20px" }}>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2">
-                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-              </svg>
-            </div>
-            <h3 style={{ fontSize: "1.3rem", fontWeight: "700", marginBottom: "10px", color: "#ffffff" }}>Zoho CRM Bidirectional Sync</h3>
-            <p style={{ color: "#94a3b8", lineHeight: "1.6", fontSize: "0.95rem" }}>
-              Seamlessly sync qualified leads, contacts, and deal stages with Zoho CRM using the modern v8 REST API and webhook-driven updates.
-            </p>
           </div>
         </div>
       </section>
 
-      {/* 4. CTA Banner */}
-      <section style={{ padding: "80px 24px", maxWidth: "1000px", margin: "40px auto", textAlign: "center", backgroundColor: "rgba(99, 102, 241, 0.08)", borderRadius: "24px", border: "1px solid rgba(99, 102, 241, 0.2)" }}>
-        <h2 style={{ fontSize: "2.2rem", fontWeight: "800", color: "#ffffff", marginBottom: "16px" }}>
-          Ready to scale your sales prospecting?
-        </h2>
-        <p style={{ color: "#cbd5e1", fontSize: "1.1rem", maxWidth: "600px", margin: "0 auto 32px" }}>
-          Join high-growth sales teams utilizing Solwer GTM to identify, research, and engage key accounts.
-        </p>
-        <Link
-          href="/register"
-          style={{
-            display: "inline-block",
-            padding: "14px 36px",
-            borderRadius: "10px",
-            background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
-            color: "#ffffff",
-            textDecoration: "none",
-            fontWeight: "700",
-            fontSize: "1.1rem",
-            boxShadow: "0 6px 24px rgba(99, 102, 241, 0.4)",
-          }}
-        >
-          Create Your Organization &rarr;
-        </Link>
-      </section>
-
-      {/* 5. Footer */}
-      <footer id="about" style={{
-        borderTop: "1px solid rgba(255, 255, 255, 0.08)",
-        padding: "48px 24px 36px",
-        maxWidth: "1200px",
-        margin: "0 auto",
-        display: "flex",
-        flexDirection: "column",
-        gap: "24px",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "20px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{ width: "28px", height: "28px", borderRadius: "6px", background: "#4f46e5", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-            </div>
-            <span style={{ fontWeight: "700", color: "#ffffff" }}>SOLWER GTM Platform</span>
+      <section id="meetings" className="landing-section" aria-labelledby="meetings-title">
+        <div className="split flip">
+          <div className="split-copy">
+            <span className="section-kicker">Meetings copilot</span>
+            <h2 id="meetings-title">From booked call to reviewed minutes</h2>
+            <p>
+              Publish a booking page, aggregate organizer availability across Google and Outlook, and turn the
+              call itself into structured follow-up — transcript, minutes of meeting and owned action items.
+            </p>
+            <ul className="check-list">
+              <li><Check /> Public booking with holds and conflict-safe confirmation</li>
+              <li><Check /> Teams and Google Meet creation with calendar invitations</li>
+              <li><Check /> Recording and transcript retrieval when the tenant allows it</li>
+              <li><Check /> Reviewed follow-up drafts and tracked action items</li>
+            </ul>
           </div>
-          <div style={{ display: "flex", gap: "24px", fontSize: "0.9rem", color: "#64748b" }}>
-            <Link href="/login" style={{ color: "#94a3b8", textDecoration: "none" }}>Sign In</Link>
-            <Link href="/register" style={{ color: "#94a3b8", textDecoration: "none" }}>Register</Link>
-            <Link href="/settings/integrations" style={{ color: "#94a3b8", textDecoration: "none" }}>Integrations</Link>
+          <div className="mock-card" aria-hidden="true">
+            <div className="mock-head">
+              Discovery call · 30 min
+              <span className="mock-pill">Recorded</span>
+            </div>
+            <div className="mock-note">
+              <div className="mock-note-row"><b>Context</b><span>Multi-depot rollout, Pune and Chennai hubs</span></div>
+              <div className="mock-note-row"><b>Problem</b><span>Yard congestion delays line-haul dispatch windows</span></div>
+              <div className="mock-note-row"><b>Decision</b><span>Pilot TWMS at one hub, review in 30 days</span></div>
+              <div className="mock-note-row"><b>Next step</b><span>Send pilot scope and pricing by Friday</span></div>
+            </div>
+            <div className="mock-tags">
+              <span className="mock-tag">Action item · owner assigned</span>
+              <span className="mock-tag">Transcript linked</span>
+              <span className="mock-tag">Zoho deal updated</span>
+            </div>
           </div>
         </div>
-        <div style={{ borderTop: "1px solid rgba(255, 255, 255, 0.05)", paddingTop: "20px", display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#64748b" }}>
+      </section>
+
+      <div className="stats-band">
+        <div className="stats-band-inner">
+          <div className="stat-block">
+            <strong>6</strong>
+            <span>Solwer products mapped to market signals</span>
+          </div>
+          <div className="stat-block">
+            <strong>62</strong>
+            <span>Automotive sources monitored on a schedule</span>
+          </div>
+          <div className="stat-block">
+            <strong>7</strong>
+            <span>Research extraction roles behind each report</span>
+          </div>
+          <div className="stat-block">
+            <strong>2</strong>
+            <span>Meeting providers — Teams and Google Meet</span>
+          </div>
+        </div>
+      </div>
+
+      <section id="about" className="landing-section" aria-labelledby="cta-title">
+        <div className="cta-panel">
+          <h2 id="cta-title">Ready to scale your sales prospecting?</h2>
+          <p>
+            Create an organization, invite your team and bring your first spreadsheet. Research, outreach and
+            meetings all stay inside one accountable workspace.
+          </p>
+          <div className="cta-actions">
+            <Link href={signedIn ? "/dashboard" : "/register"} className="btn-cta large">
+              {signedIn ? "Open dashboard" : "Create your organization"} <span aria-hidden="true">→</span>
+            </Link>
+            <Link href={signedIn ? "/settings/profile" : "/login"} className="btn-ghost large">
+              {signedIn ? "Account settings" : "Access an existing workspace"}
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <footer className="site-footer">
+        <div className="site-footer-inner">
+          <div className="footer-brand">
+            <Link href="/" className="site-brand" aria-label="Solwer GTM home">
+              <span className="site-brand-mark small">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 2.6 2.8 7.3 12 12l9.2-4.7L12 2.6Z" />
+                  <path d="m2.8 16.7 9.2 4.7 9.2-4.7" />
+                  <path d="m2.8 12 9.2 4.7 9.2-4.7" />
+                </svg>
+              </span>
+              <span>
+                <span className="site-brand-name">SOLWER <span className="site-brand-tag">GTM</span></span>
+                <span className="site-brand-sub">Sales Intelligence Platform</span>
+              </span>
+            </Link>
+            <p>
+              A local-first GTM workspace for evidence-backed prospecting, human-approved outreach and
+              accountable meeting follow-through.
+            </p>
+          </div>
+          <div className="footer-col">
+            <h4>Platform</h4>
+            <a href="#features">Features</a>
+            <a href="#outreach">Outreach &amp; email</a>
+            <a href="#meetings">Meetings copilot</a>
+          </div>
+          <div className="footer-col">
+            <h4>Workspace</h4>
+            <Link href="/login">Sign in</Link>
+            <Link href="/register">Create organization</Link>
+            <Link href="/settings/integrations">Integrations</Link>
+          </div>
+          <div className="footer-col">
+            <h4>Data &amp; safety</h4>
+            <Link href="/login">Organization settings</Link>
+            <Link href="/login">Team &amp; roles</Link>
+            <Link href="/login">Email accounts</Link>
+          </div>
+        </div>
+        <div className="footer-base">
           <span>&copy; {new Date().getFullYear()} Solwer GTM Sales Intelligence. All rights reserved.</span>
-          <span>Enterprise Multi-Tenant SaaS</span>
+          <span>Multi-tenant SaaS · Human-reviewed outreach</span>
         </div>
       </footer>
     </div>

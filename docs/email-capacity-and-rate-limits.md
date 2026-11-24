@@ -16,4 +16,4 @@ Set the limit only after confirming the approved Gmail account's policy and inte
 - No per-minute pacing, provider feedback integration or user-configurable UI control is implemented; the limit is configured through the server environment.
 - SMTP ambiguity remains a manual-reconciliation case. `unknown` is counted to prevent automatic repeat attempts.
 - The application budget is shared across campaigns on this configured service account.
-- The local unauthenticated pilot is not production-ready. Explicitly enabling sending can release approved due messages in active campaigns; do not enable it based on this display alone or publish the app. Follow applicable organizational, provider and consent requirements.
+- The local pilot is not production-ready. Explicitly enabling sending can release approved due messages in active campaigns; do not enable it based on this display alone or publish the app. Follow applicable organizational, provider and consent requirements.

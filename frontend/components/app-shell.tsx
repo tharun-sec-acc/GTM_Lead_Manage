@@ -12,6 +12,8 @@ const mainNavigation: { href: string; label: string; icon: IconName; description
   { href: "/overview", label: "Global overview", icon: "grid", description: "Consolidated performance across products" },
   { href: "/dashboard", label: "Dashboard", icon: "companies", description: "Import, research and outreach" },
   { href: "/#companies", label: "Companies & leads", icon: "companies", description: "Import, discover and connect" },
+  { href: "/crm", label: "Sales pipeline", icon: "spark", description: "Opportunities, tasks and forecast" },
+  { href: "/advertising", label: "Advertising", icon: "spark", description: "Ad campaigns, forms and lead attribution" },
   { href: "/intelligence", label: "Company intelligence", icon: "spark", description: "Evidence-backed company research" },
   { href: "/market-intelligence", label: "Market Intelligence", icon: "search", description: "Automotive discoveries & opportunity detection" },
   { href: "/followups", label: "Outreach", icon: "mail", description: "Thoughtful outreach, reviewed by you" },
@@ -23,6 +25,7 @@ const settingsNavigation: { href: string; label: string; icon: IconName; descrip
   { href: "/settings/email-accounts", label: "Email Accounts", icon: "mail", description: "Connect Gmail & Outlook sending" },
   { href: "/settings/integrations", label: "Integrations Hub", icon: "link", description: "Google, MS 365, Zoho & Apollo OAuth" },
   { href: "/settings/team", label: "Team & Roles", icon: "companies", description: "Member invitations and permissions" },
+  { href: "/settings/billing", label: "Billing & Plan", icon: "grid", description: "Subscription, entitlements and usage" },
   { href: "/settings/organization", label: "Organization", icon: "grid", description: "Tenant profile and plans" },
 ];
 

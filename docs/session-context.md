@@ -1,12 +1,105 @@
 # GTM Prospecting session context and handoff
 
-Updated: 17 November 2026, following the multi-product repository audit and baseline attempt.
+Updated: 24 November 2026, following the documentation refresh described below. The previous revision was the
+17 November 2026 multi-product repository audit.
 
 This is the canonical project handoff. It records actual implementation and verification, not completion of the full long-term product roadmap. Never copy credentials, tokens, private environment values or customer message content into this file.
 
-## Latest update: product workspaces implemented (17 November 2026)
+## Latest update: advertising and lead capture — Release 3 (24 November 2026)
 
-- Product workspaces are live in the existing application. Migration head is `0012_product_attribution`;
+- Milestone 3. New `backend/app/advertising/` package: Meta Ads and Google Ads connectors (read-only),
+  campaign mirroring with daily metrics, Meta Lead Ads and Google lead-form webhooks, website capture forms,
+  attribution touchpoints and campaign → won-revenue reporting. New `docs/advertising-and-lead-capture.md`.
+- Six new organization-scoped tables (`ads_connections`, `ads_campaigns`, `ads_metrics`, `lead_capture_forms`,
+  `lead_capture_submissions`, `attribution_touchpoints`, `webhook_receipts`). Migration
+  `0022_advertising_lead_capture` is the new head and is additive only.
+- Captured leads are ordinary tenant `Lead` rows (`source` = `website_form` / `meta_lead_ads` /
+  `google_lead_form`) plus a touchpoint carrying UTM, landing page, referrer and campaign id, so CRM scoring,
+  duplicate detection and pipeline reporting apply unchanged.
+- Endpoints under `/advertising` and `/api/advertising`; public capture at `POST /public/forms/{slug}/submit`,
+  Meta delivery at `/public/webhooks/meta` (HMAC `X-Hub-Signature-256`, verify-token handshake) and Google at
+  `/public/webhooks/google` (shared key, constant-time compare). No provider call can change spend.
+- Frontend: `/advertising` workspace (connections, sync, campaign funnel table with CPL/cost-per-qualified,
+  forms with an embeddable snippet, visible attribution caveat) and an **Advertising** sidebar entry.
+- Tests executed: `backend/tests/test_advertising_lead_capture.py` — 12 passed; full backend suite —
+  **294 passed, 0 failed** (8m43s); `tsc --noEmit` — clean. The earlier bash `fork` failure was worked around
+  by `exec`-ing the native PowerShell binary directly, which also runs the migration-to-head test that now
+  covers `0022`.
+
+## Previous update: CRM core — pipelines, opportunities and tasks (24 November 2026)
+
+- Milestone 2 of the roadmap. New `backend/app/crm/` package: organization-scoped pipelines with ordered
+  configurable stages, opportunities tied to the existing `Lead`/`Contact` (amount, expected close date,
+  owner, source, custom fields), append-only stage history, a shared activity timeline, CRM tasks,
+  custom-field definitions and saved views. New `docs/crm-pipelines-and-opportunities.md`.
+- `leads` gained additive columns: `owner_id`, `lifecycle_stage`, `qualification_status`, `score`, `source`,
+  `source_detail`, `custom_fields`, `merged_into_id`. Migration
+  `0021_crm_pipeline_and_opportunities` is the new head and is additive only.
+- Deterministic, explainable lead scoring; duplicate detection by domain/company name/email and a merge that
+  re-points contacts, opportunities, tasks and activities, deactivates conflicting contacts, marks the source
+  `merged` and writes an audit row. Reporting via `GET /crm/summary` and `/crm/pipeline-summary`
+  (open value, weighted forecast, won/lost, win rate, cycle time, tasks, needs attention).
+- Every `/crm` endpoint resolves the tenant context; by-ID access returns `404` for another organization.
+  Writes require `rep`; pipelines, stages, custom fields, merge and ownership reassignment require `manager`.
+  All mutating endpoints are also mounted under `/api/crm`.
+- Frontend: `/crm` board page (pipeline selector, metric tiles, stage moves, Won/Lost, tasks, attention
+  panel) and a **Sales pipeline** sidebar entry. Read-only members see it without write controls.
+- Tests written but **not executed**: `backend/tests/test_crm_pipeline.py` (default pipeline, opportunity
+  lifecycle plus history and summary, lost-reason validation, cross-tenant isolation, stage deletion guards,
+  role gates, scoring, duplicate merge, tasks/custom fields/saved views). The shell still cannot fork child
+  processes (`fork: Resource temporarily unavailable`, exit 254), so pytest, `tsc` and `next build` could not
+  run and no screen was rendered.
+
+## Previous update: SaaS foundation — billing entitlements and tenant isolation (24 November 2026)
+
+- Audited the repository against the all-in-one platform brief. The audit, feature inventory, gap list and
+  phased roadmap are in [the platform audit](saas-platform-audit.md). Auth, organizations, roles, invitations,
+  encrypted provider credentials and audit rows already existed; the two real foundation gaps were the missing
+  billing/entitlement system and uneven tenant enforcement in `backend/app/main.py`.
+- Added `backend/app/billing/` (plan catalogue stored as data, one subscription per organization with trial and
+  period state, monthly usage meters, limit checks, feature gates) with `/billing/*` endpoints in
+  `backend/app/billing/routes.py`, mounted at `/billing` and `/api/billing`. Migration
+  `0020_billing_foundation` is the new head and adds `billing_plans`, `billing_subscriptions`,
+  `billing_usage_records`; the catalogue is seeded on first use, so pricing stays editable data.
+- Enforcement added to existing behaviour: member invitations return `402` when the seat allowance is reached,
+  and provider-accepted emails increment `email_sends_monthly`. `BILLING_ENFORCE_LIMITS=false` is the kill switch.
+- Closed cross-tenant by-ID access in `main.py`: lead profile, domain update, Apollo search/results/enrich,
+  lead contacts create/update/delete and all batch by-ID endpoints now resolve through the tenant context and
+  return `404` for another organization's record. Legacy rows with a NULL `organization_id` remain visible only
+  to the anonymous fallback context.
+- Frontend: new `/settings/billing` page and a **Billing & Plan** sidebar entry.
+- Tests written but **not executed**: `backend/tests/test_billing_foundation.py` (catalogue and default
+  subscription, role-gated and audited plan change, seat-limit `402`, usage metering, cancel/resume, and
+  cross-tenant `404` for leads, contacts and batches). The shell still cannot fork child processes
+  (`fork: Resource temporarily unavailable`, exit 254), so pytest, `tsc` and `next build` could not run and no
+  screen was rendered. See [billing and subscriptions](billing-and-subscriptions.md).
+
+## Previous update: documentation refresh (24 November 2026)
+
+- The README and handoff had drifted substantially behind the implementation. The code contains ten further
+  feature domains beyond the product-workspace milestone: SaaS authentication and organizations
+  (`0019_saas_multi_tenant_auth`), unified meetings (`0015_unified_meetings`), the advanced research engine
+  (`0016_advanced_research_engine`), public booking (`0017_public_booking_system`), Zoho CRM
+  (`0018_zoho_crm_integration`), market intelligence (`90a32bdfdc2e`, `a23dfc0ad970`) and OAuth email accounts.
+- Documentation was completed against the source. New pages: [authentication and organizations](authentication-and-organizations.md),
+  [email accounts and sending](email-accounts-and-sending.md), [meetings and booking](meetings-and-booking.md),
+  [Zoho CRM integration](zoho-crm-integration.md) and [market intelligence](market-intelligence.md). The README
+  status tables, environment reference, route list, API map and troubleshooting were rewritten; the Microsoft
+  and Google setup pages no longer describe meetings, booking, artifacts and S3 archival as unimplemented.
+- `.env.example` was extended with the settings read by `backend/app/config.py` but missing from the example
+  (S3 archive, browser wait, keyless discovery switches and the optional cookie domain), and the session-cookie
+  guidance was clarified. The environment keeps a `[TEMPLATE]` marker line at the top of the file; that line was
+  not editable with the available file tools.
+- No application code, migration, credential or private environment value was changed. Sending, research and
+  provider flags remain as the operator left them.
+- Verification was limited by the local shell: every command that spawns a child process failed with
+  `fork: Resource temporarily unavailable` (exit 254), so the backend suite, `tsc` and `next build` could not be
+  run for this revision. Historic pass counts below remain historical. Re-run `pytest` from `backend` with
+  `PYTHONPATH=.` and `npm run typecheck && npm run build` from `frontend` before relying on them.
+
+## Previous update: product workspaces implemented (17 November 2026)
+
+- Product workspaces are live in the existing application. Migration head at that milestone was `0012_product_attribution`;
   `0011_products` creates the product, association, opportunity, template, version, attachment and research
   override tables, and `0012_product_attribution` seeds four products and attributes existing leads,
   campaigns and batches to `General / Unassigned`.
@@ -56,8 +149,8 @@ The operator supplied a 906-line master implementation specification. It require
 - Modular monolith: Next.js/React/TypeScript frontend; FastAPI/SQLAlchemy backend; PostgreSQL; Celery worker/beat with Redis.
 - Local Docker Compose services: `frontend`, `api`, `worker`, `scheduler`, `db`, `redis`.
 - Frontend: `http://localhost:3000`; API: `http://localhost:8000`; OpenAPI: `http://localhost:8000/docs`.
-- UI/API ports remain loopback-only. Database/Redis ports are unpublished. There is no application login or role isolation. Do not expose this pilot publicly.
-- Database revision: `0010_company_intelligence`. A verified PostgreSQL custom-format backup was retained in the current Copilot session's files before migration: `gtm-before-intelligence-20261116.dump`. It contains application data; do not publish it.
+- UI/API ports remain loopback-only. Database/Redis ports are unpublished. Authentication and organization tenancy are implemented; a configurable anonymous fallback (`AUTH_ALLOW_ANONYMOUS_FALLBACK`) can still map unauthenticated calls to the default organization. Do not expose this pilot publicly.
+- Database revision at the last recorded live check: `0010_company_intelligence`; the current migration head in the repository is `0020_billing_foundation` (see [authentication and organizations](authentication-and-organizations.md)). A verified PostgreSQL custom-format backup was retained in the current Copilot session's files before migration: `gtm-before-intelligence-20261116.dump`. It contains application data; do not publish it.
 - Last read-only state: 55 leads, 1 paused campaign, 1 enrollment, 4 draft messages, 0 SMTP-accepted events, 0 research jobs. These are timestamped observations, not constants.
 
 ## 2. Implemented milestones
@@ -220,7 +313,7 @@ The local Python interpreter is the workspace `.venv\Scripts\python.exe`. Node 2
 - No duplicate-merge workflow, full sales ownership/stage history or complete CRM pipeline.
 - No Calendly, Dataverse, Power Automate or external CRM integration.
 - No actual Microsoft booking/Teams lifecycle, recording/transcripts/S3/MoM/Jira automation.
-- No app authentication or production/public deployment.
+- No production/public deployment, monitoring or backup policy; authentication and tenancy are implemented but unverified against a live external identity setup.
 - Gmail network access and separately approved live vendor testing remain operational prerequisites.
 
 Do not treat these gaps as implemented because research is now enabled. Preserve existing message approvals, suppression/inbox controls, local-only ports and user records.

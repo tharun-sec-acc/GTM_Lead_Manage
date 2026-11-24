@@ -24,6 +24,7 @@ from app.auth.schemas import (
     OrganizationUpdateRequest,
 )
 from app.auth.security import generate_secure_token, hash_password, hash_token, to_utc
+from app.billing.service import LimitExceeded, check_limit
 from app.config import settings
 from app.database import get_db
 
@@ -139,6 +140,14 @@ def invite_member(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="User is already a member of this organization.",
             )
+
+    try:
+        check_limit(session, ctx.organization, "seats", amount=1)
+    except LimitExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=str(exc),
+        ) from exc
 
     raw_token = generate_secure_token(32)
     invitation = OrganizationInvitation(

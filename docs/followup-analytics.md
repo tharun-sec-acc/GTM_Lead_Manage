@@ -17,4 +17,4 @@ The follow-up screen shows this summary for the selected campaign. A zero denomi
 - Suppression counts include every suppression reason, not only unsubscribes.
 - Unmatched inbox replies are not assigned to a campaign and are excluded from campaign reply metrics.
 
-The API is local-only and unauthenticated along with the rest of the pilot. Do not expose recipient or campaign analytics publicly.
+The API is local-only and requires a login by default (an optional anonymous fallback exists). Do not expose recipient or campaign analytics publicly.

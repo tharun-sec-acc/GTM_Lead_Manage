@@ -36,6 +36,18 @@ from app.market_intelligence.routes import router as market_intelligence_router
 from app.auth.routes import router as auth_router
 from app.auth.organizations import router as org_router, public_router as public_invitations_router
 from app.auth.integrations import router as integrations_router
+from app.billing.routes import router as billing_router
+from app.crm.routes import router as crm_router
+from app.advertising.routes import (
+    public_router as advertising_public_router,
+    router as advertising_router,
+    webhook_router as advertising_webhook_router,
+)
+from app.conversations.routes import (
+    public_router as conversations_public_router,
+    router as conversations_router,
+    webhook_router as conversations_webhook_router,
+)
 from app.email_accounts_api import router as email_accounts_router
 from app.auth.dependencies import get_tenant_context, TenantContext
 from app.config import settings
@@ -47,6 +59,18 @@ app.include_router(org_router)
 app.include_router(org_router, prefix="/api")
 app.include_router(public_invitations_router)
 app.include_router(integrations_router)
+app.include_router(billing_router)
+app.include_router(billing_router, prefix="/api")
+app.include_router(crm_router)
+app.include_router(crm_router, prefix="/api")
+app.include_router(advertising_router)
+app.include_router(advertising_router, prefix="/api")
+app.include_router(advertising_public_router)
+app.include_router(advertising_webhook_router)
+app.include_router(conversations_router)
+app.include_router(conversations_router, prefix="/api")
+app.include_router(conversations_public_router)
+app.include_router(conversations_webhook_router)
 app.include_router(email_accounts_router)
 app.include_router(followup_router)
 app.include_router(public_router)
@@ -164,11 +188,36 @@ def validate_contact_email(value: str | None) -> str | None:
         raise HTTPException(400, "Invalid business email address.") from exc
 
 
-def require_lead(session: Session, lead_id: str):
+def tenant_scope_clause(model, ctx: TenantContext):
+    """SQL filter that restricts a tenant-owned model to the caller's organization.
+
+    Rows created before multi-tenancy existed carry a NULL organization_id and
+    belong to the legacy single-tenant pilot, so they are only visible to the
+    anonymous fallback context rather than to every authenticated tenant.
+    """
+    if ctx.is_anonymous_fallback:
+        return or_(model.organization_id == ctx.org_id, model.organization_id.is_(None))
+    return model.organization_id == ctx.org_id
+
+
+def tenant_owns(record_org_id: str | None, ctx: TenantContext) -> bool:
+    return record_org_id == ctx.org_id or (
+        record_org_id is None and ctx.is_anonymous_fallback
+    )
+
+
+def require_lead(session: Session, lead_id: str, ctx: TenantContext):
     lead = session.get(Lead, lead_id)
-    if not lead:
+    if not lead or not tenant_owns(lead.organization_id, ctx):
         raise HTTPException(404, "Lead not found.")
     return lead
+
+
+def require_batch(session: Session, batch_id: str, ctx: TenantContext):
+    batch = session.get(Batch, batch_id)
+    if not batch or not tenant_owns(batch.organization_id, ctx):
+        raise HTTPException(404, "Batch not found.")
+    return batch
 
 
 def batch_response(session: Session, batch: Batch):
@@ -240,10 +289,10 @@ async def upload_batch(file: UploadFile = File(...), product_id: str | None = Fo
 
 
 @app.post("/batches/{batch_id}/start")
-def start_batch(batch_id: str, request: MappingRequest, session: Session = Depends(get_db)):
-    batch = session.get(Batch, batch_id)
-    if not batch:
-        raise HTTPException(404, "Batch not found.")
+def start_batch(batch_id: str, request: MappingRequest,
+                ctx: TenantContext = Depends(get_tenant_context),
+                session: Session = Depends(get_db)):
+    batch = require_batch(session, batch_id, ctx)
     if batch.status != "draft":
         raise HTTPException(409, "Batch has already been started.")
     try:
@@ -268,10 +317,10 @@ def start_batch(batch_id: str, request: MappingRequest, session: Session = Depen
 
 
 @app.post("/batches/{batch_id}/retry")
-def retry_batch(batch_id: str, session: Session = Depends(get_db)):
-    batch = session.get(Batch, batch_id)
-    if not batch:
-        raise HTTPException(404, "Batch not found.")
+def retry_batch(batch_id: str,
+                ctx: TenantContext = Depends(get_tenant_context),
+                session: Session = Depends(get_db)):
+    batch = require_batch(session, batch_id, ctx)
     if batch.status != "failed":
         raise HTTPException(409, "Only failed batches can be retried.")
     batch.status = "pending"
@@ -286,9 +335,7 @@ def batches(
     ctx: TenantContext = Depends(get_tenant_context),
     session: Session = Depends(get_db),
 ):
-    query = select(Batch).where(
-        or_(Batch.organization_id == ctx.org_id, Batch.organization_id.is_(None))
-    )
+    query = select(Batch).where(tenant_scope_clause(Batch, ctx))
     if product_id:
         query = query.where(Batch.product_id == product_id)
     results = session.scalars(query.order_by(Batch.created_at.desc()).limit(100)).all()
@@ -297,18 +344,18 @@ def batches(
 
 
 @app.get("/batches/{batch_id}")
-def get_batch(batch_id: str, session: Session = Depends(get_db)):
-    batch = session.get(Batch, batch_id)
-    if not batch:
-        raise HTTPException(404, "Batch not found.")
+def get_batch(batch_id: str,
+              ctx: TenantContext = Depends(get_tenant_context),
+              session: Session = Depends(get_db)):
+    batch = require_batch(session, batch_id, ctx)
     return batch_response(session, batch)
 
 
 @app.get("/batches/{batch_id}/preview")
-def preview_batch(batch_id: str, session: Session = Depends(get_db)):
-    batch = session.get(Batch, batch_id)
-    if not batch:
-        raise HTTPException(404, "Batch not found.")
+def preview_batch(batch_id: str,
+                  ctx: TenantContext = Depends(get_tenant_context),
+                  session: Session = Depends(get_db)):
+    batch = require_batch(session, batch_id, ctx)
     if batch.status != "draft":
         raise HTTPException(409, "Only draft batches can be mapped.")
     try:
@@ -329,7 +376,7 @@ def leads(
     session: Session = Depends(get_db),
 ):
     query = select(Lead).where(
-        or_(Lead.organization_id == ctx.org_id, Lead.organization_id.is_(None))
+        tenant_scope_clause(Lead, ctx)
     ).order_by(Lead.created_at.desc()).limit(1000)
     return [lead_response(lead) for lead in session.scalars(query).all()]
 
@@ -340,8 +387,9 @@ def utc_timestamp(value: datetime) -> datetime:
 
 @app.get("/leads/{lead_id}/profile")
 def lead_profile(lead_id: str, limit: int = Query(default=200, ge=1, le=500),
+                 ctx: TenantContext = Depends(get_tenant_context),
                  session: Session = Depends(get_db)):
-    lead = require_lead(session, lead_id)
+    lead = require_lead(session, lead_id, ctx)
     contacts = session.scalars(select(Contact).where(
         Contact.lead_id == lead_id
     ).order_by(Contact.is_active.desc(), Contact.name).limit(limit)).all()
@@ -514,8 +562,10 @@ def lead_profile(lead_id: str, limit: int = Query(default=200, ge=1, le=500),
 
 
 @app.put("/leads/{lead_id}/domain")
-def set_domain(lead_id: str, request: DomainRequest, session: Session = Depends(get_db)):
-    lead = require_lead(session, lead_id)
+def set_domain(lead_id: str, request: DomainRequest,
+               ctx: TenantContext = Depends(get_tenant_context),
+               session: Session = Depends(get_db)):
+    lead = require_lead(session, lead_id, ctx)
     raw = request.domain.strip()
     parsed = urlsplit(raw if "://" in raw else f"//{raw}")
     if parsed.scheme and parsed.scheme.lower() not in {"http", "https"}:
@@ -537,8 +587,10 @@ def set_domain(lead_id: str, request: DomainRequest, session: Session = Depends(
 
 
 @app.post("/leads/{lead_id}/apollo/search")
-def search_contacts(lead_id: str, session: Session = Depends(get_db)):
-    lead = require_lead(session, lead_id)
+def search_contacts(lead_id: str,
+                    ctx: TenantContext = Depends(get_tenant_context),
+                    session: Session = Depends(get_db)):
+    lead = require_lead(session, lead_id, ctx)
     if not lead.domain:
         raise HTTPException(400, "Confirm the company domain before searching.")
     try:
@@ -598,8 +650,10 @@ def search_contacts(lead_id: str, session: Session = Depends(get_db)):
 
 
 @app.get("/leads/{lead_id}/apollo/search-results")
-def saved_search_results(lead_id: str, session: Session = Depends(get_db)):
-    lead = require_lead(session, lead_id)
+def saved_search_results(lead_id: str,
+                         ctx: TenantContext = Depends(get_tenant_context),
+                         session: Session = Depends(get_db)):
+    lead = require_lead(session, lead_id, ctx)
     results = session.scalars(select(ApolloSearchResult).where(
         ApolloSearchResult.lead_id == lead.id
     ).order_by(ApolloSearchResult.retrieved_at.desc()).limit(100)).all()
@@ -614,8 +668,10 @@ def saved_search_results(lead_id: str, session: Session = Depends(get_db)):
 
 
 @app.post("/leads/{lead_id}/apollo/enrich")
-def enrich_contact(lead_id: str, request: EnrichRequest, session: Session = Depends(get_db)):
-    lead = require_lead(session, lead_id)
+def enrich_contact(lead_id: str, request: EnrichRequest,
+                  ctx: TenantContext = Depends(get_tenant_context),
+                  session: Session = Depends(get_db)):
+    lead = require_lead(session, lead_id, ctx)
     if not lead.domain:
         raise HTTPException(400, "Confirm the company domain before enriching.")
     existing = session.scalar(select(Contact).where(
@@ -707,7 +763,7 @@ def list_contacts(
         .join(Lead, Contact.lead_id == Lead.id)
         .where(
             Contact.is_active.is_(True),
-            or_(Lead.organization_id == ctx.org_id, Lead.organization_id.is_(None))
+            tenant_scope_clause(Lead, ctx)
         )
     )
     if lead_id:
@@ -727,8 +783,10 @@ def list_contacts(
 
 
 @app.get("/leads/{lead_id}/contacts")
-def contacts(lead_id: str, session: Session = Depends(get_db)):
-    require_lead(session, lead_id)
+def contacts(lead_id: str,
+             ctx: TenantContext = Depends(get_tenant_context),
+             session: Session = Depends(get_db)):
+    require_lead(session, lead_id, ctx)
     results = session.scalars(select(Contact).where(
         Contact.lead_id == lead_id, Contact.is_active.is_(True)
     ).order_by(Contact.name)).all()
@@ -742,7 +800,7 @@ def create_contact(
     ctx: TenantContext = Depends(get_tenant_context),
     session: Session = Depends(get_db)
 ):
-    require_lead(session, lead_id)
+    require_lead(session, lead_id, ctx)
     contact = Contact(
         organization_id=ctx.org_id,
         lead_id=lead_id, apollo_id=None, name=data.name.strip(), title=data.title,
@@ -758,7 +816,9 @@ def create_contact(
 
 @app.put("/leads/{lead_id}/contacts/{contact_id}")
 def update_contact(lead_id: str, contact_id: str, data: ContactUpdate,
+                   ctx: TenantContext = Depends(get_tenant_context),
                    session: Session = Depends(get_db)):
+    require_lead(session, lead_id, ctx)
     contact = session.scalar(select(Contact).where(
         Contact.id == contact_id, Contact.lead_id == lead_id, Contact.is_active.is_(True)
     ))
@@ -777,7 +837,10 @@ def update_contact(lead_id: str, contact_id: str, data: ContactUpdate,
 
 
 @app.delete("/leads/{lead_id}/contacts/{contact_id}", status_code=204)
-def remove_contact(lead_id: str, contact_id: str, session: Session = Depends(get_db)):
+def remove_contact(lead_id: str, contact_id: str,
+                   ctx: TenantContext = Depends(get_tenant_context),
+                   session: Session = Depends(get_db)):
+    require_lead(session, lead_id, ctx)
     contact = session.scalar(select(Contact).where(
         Contact.id == contact_id, Contact.lead_id == lead_id, Contact.is_active.is_(True)
     ))

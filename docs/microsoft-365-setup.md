@@ -1,6 +1,6 @@
 # Microsoft 365 calendar availability (local pilot)
 
-This milestone replaces the meetings screen's active Google Calendar availability flow with Microsoft Entra sign-in and Microsoft Graph availability lookup. It does **not** create Outlook events or Teams meetings, send email, retrieve recordings or transcripts, or access OneDrive/SharePoint. The application remains unauthenticated and local-only; do not expose or forward its ports or use production customer data.
+This milestone replaces the meetings screen's active Google Calendar availability flow with Microsoft Entra sign-in and Microsoft Graph availability lookup. It does **not** create Outlook events or Teams meetings, send email, retrieve recordings or transcripts, or access OneDrive/SharePoint. The application now requires sign-in (see [authentication and organizations](authentication-and-organizations.md)) and remains local-only; do not expose or forward its ports or use production customer data.
 
 ## Entra app registration and delegated permissions
 
@@ -44,7 +44,7 @@ Keep the existing local deployment safeguards: `MAIL_SEND_ENABLED=false`, `TRACK
 - OAuth authorization-code flow and token refresh use MSAL's confidential-client and serializable token-cache APIs. OAuth state is short-lived, single-use, browser-cookie-bound, and encrypted. The organizer token cache is Fernet-encrypted at rest.
 - `POST /microsoft/availability` calls Graph v1.0 `POST /me/calendar/getSchedule` with one configured schedule, a UTC date-time range, and a 30-minute `availabilityViewInterval`. It considers non-free schedule items unavailable and never turns a Graph failure or incomplete schedule into free slots. It does not expose event subjects or locations.
 - `GET /microsoft/oauth/status` reports the locally stored connection. `POST /microsoft/oauth/disconnect` removes the local encrypted MSAL cache only. It does not revoke tenant-side user consent; revoke consent through the tenant's approved Entra administration process if required.
-- Availability is informational and may change before a future booking. The screen does not create calendar events, return Teams `onlineMeeting.joinUrl`, invite a prospect, or send mail. Gmail SMTP/IMAP is a separate legacy mail integration and is not changed by this calendar milestone.
+- Availability is informational and may change before a future booking. The `/meetings` screen now creates Teams meetings and Outlook calendar events, returns `onlineMeeting.joinUrl`, invites participants, syncs artifacts and drafts follow-ups through the meetings module. The older `/microsoft/availability` endpoint remains availability-only and does not book, invite or send mail. Gmail SMTP/IMAP is a separate legacy mail integration and is not changed by this calendar milestone.
 - Graph throttling, permission failures, expired authorization, malformed results, and organizer mismatch are surfaced as errors; the API does not offer slots when it cannot verify availability.
 - Tests use mocked MSAL/Graph responses and temporary SQLite. No live Entra tenant, Graph endpoint, Microsoft 365 mailbox, real booking, or email send was used or validated.
 
@@ -54,11 +54,11 @@ Keep the existing local deployment safeguards: `MAIL_SEND_ENABLED=false`, `TRACK
 | --- | --- |
 | Entra OAuth and encrypted token cache | Implemented; mocked tests only |
 | Outlook/Graph availability | Implemented; mocked tests only |
-| Outlook event creation and Teams meeting link | Not implemented |
-| Outlook mail, delta inbox, replies and bounce processing | Not implemented; Gmail IMAP/SMTP remains separate |
-| Teams recordings, transcripts and change notifications | Not implemented; tenant policy/feature availability unverified |
-| OneDrive/SharePoint archive and S3 archive | Not implemented |
-| Bedrock meeting analysis and sales workflow | Not implemented |
+| Outlook event creation and Teams meeting link | Implemented in `backend/app/meetings/providers/teams_provider.py` (Graph `/me/events`, `/me/onlineMeetings`); mock-tested only |
+| Outlook mail send and recent-message inbox sync | Implemented through OAuth mail accounts (`email_provider.MicrosoftGraphProvider`); delta/history sync and bounce processing remain unimplemented |
+| Teams recordings and transcripts | Implemented as explicit sync/import in the meetings module; Graph change notifications are not implemented and tenant policy is unverified |
+| Artifact archive | Local volume plus optional S3 upload (`meetings/artifacts/storage_service.py`); OneDrive/SharePoint archive is not implemented |
+| Bedrock meeting analysis | Implemented (`meetings/intelligence/meeting_analyzer.py`) for summary, minutes of meeting and action items; Jira and CRM task automation is not implemented |
 | Power Platform connection | Future possibility only; not imminent or implemented |
 
 Each later milestone must verify the operation's HTTP method, request/response fields, delegated versus application permissions, tenant admin-consent requirements, and documented limitations before implementation.

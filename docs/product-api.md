@@ -1,7 +1,7 @@
 # Product API reference
 
 All routes are served by the existing FastAPI application (`http://localhost:8000`). The interactive
-schema is at `/docs`. The API is unauthenticated and loopback-only; product scoping is workflow
+schema is at `/docs`. The API requires a login by default (an anonymous default-organization fallback can be enabled with `AUTH_ALLOW_ANONYMOUS_FALLBACK`) and is loopback-only; product scoping is workflow
 isolation, not authorization.
 
 ## Products

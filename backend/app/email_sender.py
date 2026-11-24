@@ -7,8 +7,9 @@ from typing import Any
 import httpx
 from sqlalchemy.orm import Session
 
-from app.auth.models import AuditLog, OAuthConnection, now
+from app.auth.models import AuditLog, OAuthConnection, Organization, now
 from app.auth.security import decrypt_token, encrypt_token
+from app.billing.service import record_usage
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -271,5 +272,10 @@ def send_email_via_account(
     )
     session.add(audit)
     session.commit()
+
+    # Meter the send for plan usage reporting (never blocks an already-sent email).
+    meter_org = session.get(Organization, org_id or conn.organization_id)
+    if meter_org is not None:
+        record_usage(session, meter_org, "email_sends_monthly")
 
     return result

@@ -29,10 +29,10 @@ See [multi-recipient outreach](multi-recipient-outreach.md) for validation, draf
 
 `GET /leads/{lead_id}/profile?limit=200` returns the profile. `limit` is bounded from 1 to 500. Email, reply, contact, Apollo and timeline lists are bounded; use the limit to request a larger recent window. Existing list endpoints remain unchanged. The profile does not currently provide server-side date/campaign filters or timeline pagination tokens.
 
-SMTP `sent` status and `smtp_accepted` events are shown as acceptance only, never provider-confirmed delivery. Open/click signals remain approximate. Current ownership, lifecycle stage/history, meeting booking/recordings, proposal, contract and customer-success modules are not implemented. Research is loaded through its own `/intelligence` APIs, not the legacy profile aggregate's placeholder research field.
+SMTP `sent` status and `smtp_accepted` events are shown as acceptance only, never provider-confirmed delivery. Open/click signals remain approximate. Current ownership, lifecycle stage/history, proposal, contract and customer-success modules are not implemented; meeting booking and recording/transcript handling live in the [meetings and booking](meetings-and-booking.md) module. Research is loaded through its own `/intelligence` APIs, not the legacy profile aggregate's placeholder research field.
 
 ## Data aggregation
 
-The backend bulk-loads records for a lead and its enrollments and their messages; it does not fetch whole-workspace histories. The API includes email body content for local review. Do not expose this profile outside the current unauthenticated local pilot.
+The backend bulk-loads records for a lead and its enrollments and their messages; it does not fetch whole-workspace histories. The API includes email body content for local review. Do not expose this profile outside the local pilot.
 
 See [lead data relationships](lead-data-relationships.md) and [backward compatibility](backward-compatibility.md).

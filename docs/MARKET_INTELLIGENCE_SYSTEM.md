@@ -1,6 +1,8 @@
 # Automotive Market Intelligence & Opportunity Detection System
 ## Complete System Architecture, Implementation & Deployment Blueprint
 
+> **Status note:** this page is the original design blueprint. For implemented behavior, endpoints, scoring, operations and limitations, see [market-intelligence.md](market-intelligence.md). All code paths below are repository-relative.
+
 ---
 
 ### Table of Contents
@@ -43,17 +45,17 @@ The system strictly adheres to all zero-third-party search API mandates:
 | **GDELT / GNews / NewsAPI** | **Strictly Prohibited** | Zero external news aggregation APIs imported |
 | **Google Search / Bing Search APIs** | **Strictly Prohibited** | Direct targeted monitoring of verified industry portals |
 | **Tavily / SerpAPI** | **Strictly Prohibited** | Zero third-party SERP or scraping APIs |
-| **Primary Discovery Engine** | **Mandatory** | Existing Playwright crawler: [`playwright_provider.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/providers/playwright_provider.py) |
+| **Primary Discovery Engine** | **Mandatory** | Existing Playwright crawler: [`playwright_provider.py`](../backend/app/market_intelligence/providers/playwright_provider.py) |
 | **HTTP Retrieval** | **Mandatory** | SSRF-safe HTTP client with browser user-agent emulation |
-| **AI Intelligence & Analysis** | **Mandatory** | Existing AWS Bedrock (Claude / Titan): [`event_classifier.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/ai/event_classifier.py) |
+| **AI Intelligence & Analysis** | **Mandatory** | Existing AWS Bedrock (Claude / Titan): [`event_classifier.py`](../backend/app/market_intelligence/ai/event_classifier.py) |
 | **Data & Background Stack** | **Mandatory** | PostgreSQL, Redis 7, Celery Worker, Next.js 15 |
 
 ---
 
 ### 3. Full Inventory of Completed Deliverables
 
-#### Backend Deliverables ([`backend/app/market_intelligence/`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/))
-1. **Core Data Models ([`models.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/models.py))**:
+#### Backend Deliverables ([`backend/app/market_intelligence/`](../backend/app/market_intelligence/))
+1. **Core Data Models ([`models.py`](../backend/app/market_intelligence/models.py))**:
    - `MarketSource`: Monitored sources, domain, section URLs, priorities, and crawl intervals.
    - `MarketSourceRun`: Audit trail of scheduled crawl runs, articles discovered, and errors.
    - `MarketArticle`: Extracted articles with canonical URL, author, date, and SHA-256 fingerprint.
@@ -68,21 +70,21 @@ The system strictly adheres to all zero-third-party search API mandates:
    - `MarketWebhookSubscription`: Outbound webhook endpoints with HMAC-SHA256 signing.
 
 2. **Automated Migrations**:
-   - [`90a32bdfdc2e_add_automotive_market_intelligence_.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/migrations/versions/90a32bdfdc2e_add_automotive_market_intelligence_.py): Complete relational schema.
-   - [`a23dfc0ad970_add_market_webhook_subscriptions.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/migrations/versions/a23dfc0ad970_add_market_webhook_subscriptions.py): Real-time webhook subscription table.
+   - [`90a32bdfdc2e_add_automotive_market_intelligence_.py`](../backend/migrations/versions/90a32bdfdc2e_add_automotive_market_intelligence_.py): Complete relational schema.
+   - [`a23dfc0ad970_add_market_webhook_subscriptions.py`](../backend/migrations/versions/a23dfc0ad970_add_market_webhook_subscriptions.py): Real-time webhook subscription table.
 
 3. **Autonomous Intelligence Services**:
-   - [`source_registry.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/services/source_registry.py): Seed registry of 62 Indian automotive websites across 7 sectors.
-   - [`crawl_service.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/services/crawl_service.py): Delta detection, URL normalization, link filtering, and body extraction.
-   - [`playwright_provider.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/providers/playwright_provider.py): SSRF-safe request engine, streaming HTML parser, JSON-LD news extractor.
-   - [`event_classifier.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/ai/event_classifier.py): Bedrock prompt engineering for event categorization, company extraction, and bottleneck diagnosis.
-   - [`company_resolution.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/services/company_resolution.py): Fuzzy matching against CRM leads vs discovered company deduplication.
-   - [`product_matching.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/services/product_matching.py): Maps signals against the 6 Solwer products and generates custom pitches.
-   - [`scorer.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/services/scorer.py): Transparent dual scoring algorithms.
-   - [`webhook_dispatcher.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/services/webhook_dispatcher.py): HMAC-SHA256 signed outbound HTTP POST notifications formatted for Slack/Teams.
-   - [`pipeline_orchestrator.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/services/pipeline_orchestrator.py): Orchestrates the full lifecycle from article extraction to alert generation.
+   - [`source_registry.py`](../backend/app/market_intelligence/services/source_registry.py): Seed registry of 62 Indian automotive websites across 7 sectors.
+   - [`crawl_service.py`](../backend/app/market_intelligence/services/crawl_service.py): Delta detection, URL normalization, link filtering, and body extraction.
+   - [`playwright_provider.py`](../backend/app/market_intelligence/providers/playwright_provider.py): SSRF-safe request engine, streaming HTML parser, JSON-LD news extractor.
+   - [`event_classifier.py`](../backend/app/market_intelligence/ai/event_classifier.py): Bedrock prompt engineering for event categorization, company extraction, and bottleneck diagnosis.
+   - [`company_resolution.py`](../backend/app/market_intelligence/services/company_resolution.py): Fuzzy matching against CRM leads vs discovered company deduplication.
+   - [`product_matching.py`](../backend/app/market_intelligence/services/product_matching.py): Maps signals against the 6 Solwer products and generates custom pitches.
+   - [`scorer.py`](../backend/app/market_intelligence/services/scorer.py): Transparent dual scoring algorithms.
+   - [`webhook_dispatcher.py`](../backend/app/market_intelligence/services/webhook_dispatcher.py): HMAC-SHA256 signed outbound HTTP POST notifications formatted for Slack/Teams.
+   - [`pipeline_orchestrator.py`](../backend/app/market_intelligence/services/pipeline_orchestrator.py): Orchestrates the full lifecycle from article extraction to alert generation.
 
-4. **REST API Endpoints ([`routes.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/routes.py))**:
+4. **REST API Endpoints ([`routes.py`](../backend/app/market_intelligence/routes.py))**:
    - `GET /api/market-intelligence/overview`: Executive KPI counts and product breakdowns.
    - `GET /api/market-intelligence/feed`: Real-time streaming market event feed with filters.
    - `GET /api/market-intelligence/opportunities`: Scored opportunities with pitch recommendations.
@@ -92,19 +94,19 @@ The system strictly adheres to all zero-third-party search API mandates:
    - `GET/POST/DELETE /api/market-intelligence/webhooks`: Outbound webhook subscription manager.
    - `POST /api/market-intelligence/webhooks/test`: Test webhook payload dispatcher.
 
-5. **Background Automation ([`tasks.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/tasks.py#L32))**:
+5. **Background Automation ([`tasks.py`](../backend/app/tasks.py#L32))**:
    - Celery Beat schedule `crawl-market-sources` running every 5 minutes (`300s`).
    - Incremental crawl of sources due based on `crawl_frequency_minutes`.
    - Automatic queue processing of unanalyzed articles through Bedrock.
 
-#### Frontend Deliverables ([`frontend/app/market-intelligence/`](file:///home/tharun/denso/GTM_prospect_mvp/frontend/app/market-intelligence/))
-1. **Interactive Radar Dashboard ([`page.tsx`](file:///home/tharun/denso/GTM_prospect_mvp/frontend/app/market-intelligence/page.tsx))**:
+#### Frontend Deliverables ([`frontend/app/market-intelligence/`](../frontend/app/market-intelligence/))
+1. **Interactive Radar Dashboard ([`page.tsx`](../frontend/app/market-intelligence/page.tsx))**:
    - **Executive Metric Cards**: Signals Today, High-Priority Opportunities, New Companies, Monitored Sources.
    - **Solwer Product Opportunity Cards**: Displaying counts and breakdown across all 6 products.
    - **Tabbed Views**: Live Market Feed, Qualified Opportunities, Discovered Companies, Source Manager, Watchlists, Outbound Webhook Subscriptions.
 2. **Fixed Layout & Navigation**:
    - Removed duplicate topbar wrappers in `/market-intelligence` and `/zoho`.
-   - Dynamic unread alert counter badge next to "Market Intelligence" in [`app-shell.tsx`](file:///home/tharun/denso/GTM_prospect_mvp/frontend/components/app-shell.tsx).
+   - Dynamic unread alert counter badge next to "Market Intelligence" in [`app-shell.tsx`](../frontend/components/app-shell.tsx).
 3. **Interactive Numbers Drilldown Modal**:
    - Clicking on any KPI number or Solwer product pill opens a detailed 3-part modal:
      - **The News Announcement**: Headline, Publisher, Publication Date, Location, Excerpt.
@@ -117,7 +119,7 @@ The system strictly adheres to all zero-third-party search API mandates:
      - **1-Click Sales Actions**: "Approve for Outreach", "View in Qualified Opportunities", "Add to Watchlist".
 4. **1-Click Webhook Simulator**:
    - Built-in simulation modal with 4 realistic Indian automotive presets (Tata Motors TWMS, Mahindra Loss Tracker, Delhivery VDI/Fleet, Ashok Leyland Decarbonization).
-5. **Lead 360 Deep Integration ([`frontend/app/leads/[id]/page.tsx`](file:///home/tharun/denso/GTM_prospect_mvp/frontend/app/leads/[id]/page.tsx))**:
+5. **Lead 360 Deep Integration ([`frontend/app/leads/[id]/page.tsx`](../frontend/app/leads/[id]/page.tsx))**:
    - Autonomous market intelligence tab displaying real-time events, scores, and recommended pitches attached to CRM leads.
 
 ---
@@ -214,7 +216,7 @@ POST /api/market-intelligence/   POST to Slack / Teams / CRM
 ```
 
 - **Inbound Endpoint (`POST /api/market-intelligence/webhook`)**: Ingests real-time feeds, tender alerts, or third-party webhooks without waiting for scheduled crawl cycles.
-- **Outbound Dispatcher ([`webhook_dispatcher.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/market_intelligence/services/webhook_dispatcher.py))**: Dispatches HTTP POST requests with:
+- **Outbound Dispatcher ([`webhook_dispatcher.py`](../backend/app/market_intelligence/services/webhook_dispatcher.py))**: Dispatches HTTP POST requests with:
   - `X-GTM-Signature`: HMAC SHA-256 hash of payload and secret.
   - `X-Webhook-Secret`: Verification secret token.
   - Native Slack and Microsoft Teams formatted payload cards.
@@ -273,7 +275,7 @@ Here is how and where this system can be deployed and integrated across your org
 - Whenever a high-priority announcement (e.g. Tata Motors expanding a logistics depot) is detected, the bot posts the news headline, operational problem, and pre-written pitch instantly.
 
 #### C. Automated Cold Outreach Cadences
-- Connect qualified opportunities directly into the existing GTMProspecting outreach engine ([`app/tasks.py`](file:///home/tharun/denso/GTM_prospect_mvp/backend/app/tasks.py#L25)).
+- Connect qualified opportunities directly into the existing GTMProspecting outreach engine ([`app/tasks.py`](../backend/app/tasks.py#L25)).
 - The generated pitch can automatically populate step 1 of an email cadence sent to verified contacts discovered via Apollo.
 
 #### D. International Geographic Expansion
