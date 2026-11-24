@@ -30,6 +30,7 @@ celery_app.conf.update(
         "zoho-inbound-sync": {"task": "app.tasks.zoho_inbound_sync_task", "schedule": 300.0},
         "zoho-token-refresh": {"task": "app.tasks.zoho_token_refresh_task", "schedule": 900.0},
         "crawl-market-sources": {"task": "app.tasks.crawl_market_sources_task", "schedule": 300.0},
+        "sync-connected-mailboxes": {"task": "app.tasks.sync_connected_mailboxes", "schedule": 60.0},
     },
 )
 
@@ -216,6 +217,49 @@ def zoho_token_refresh_task():
 def crawl_market_sources_task():
     from app.market_intelligence.tasks import crawl_due_market_sources
     return crawl_due_market_sources(max_sources=4)
+
+
+@celery_app.task(name="app.tasks.sync_connected_mailboxes")
+def sync_connected_mailboxes():
+    """
+    Periodic task: Iterate across all active OAuth-connected mailboxes
+    (Google Gmail and Microsoft Outlook) for all customer organizations,
+    fetch new incoming messages, detect customer replies, and update GTM leads.
+    """
+    from app.auth.models import OAuthConnection
+
+    with SessionLocal() as session:
+        connections = session.scalars(
+            select(OAuthConnection).where(
+                OAuthConnection.provider.in_(["google", "microsoft"]),
+                OAuthConnection.status == "connected",
+            )
+        ).all()
+        conn_ids = [c.id for c in connections]
+
+    for conn_id in conn_ids:
+        sync_single_connected_mailbox.delay(conn_id)
+
+
+@celery_app.task(name="app.tasks.sync_single_connected_mailbox")
+def sync_single_connected_mailbox(conn_id: str):
+    """Sync inbox for a single OAuthConnection with isolated transaction."""
+    from app.auth.models import OAuthConnection
+    from app.email_provider import get_email_provider
+
+    try:
+        with SessionLocal.begin() as session:
+            conn = session.get(OAuthConnection, conn_id)
+            if not conn or conn.status != "connected":
+                return
+            provider = get_email_provider(conn)
+            res = provider.sync_inbox(session, max_messages=25)
+            logger.info("Synced mailbox %s (%s): %s", conn.account_email, conn.provider, res)
+            return res
+    except Exception as exc:
+        logger.warning("Error syncing mailbox %s: %s", conn_id, exc)
+        return {"error": str(exc)}
+
 
 
 

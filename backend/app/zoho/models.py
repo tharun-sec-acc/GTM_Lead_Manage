@@ -31,6 +31,7 @@ class ZohoConnection(Base):
     __tablename__ = "zoho_connections"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     org_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     org_name: Mapped[str] = mapped_column(String(255))
     user_email: Mapped[str | None] = mapped_column(String(320), nullable=True)

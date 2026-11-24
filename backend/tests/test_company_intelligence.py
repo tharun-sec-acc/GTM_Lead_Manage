@@ -357,11 +357,24 @@ def test_additive_migration_preserves_existing_leads(tmp_path, monkeypatch):
     command.upgrade(config, "0009_microsoft_oauth")
     engine = create_engine(database_url)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
+    import uuid
+    from datetime import datetime, timezone
+    from sqlalchemy import text
+    lead_id = str(uuid.uuid4())
     with factory.begin() as session:
-        lead = Lead(company_name="Preserved", company_key="preserved", extra={})
-        session.add(lead)
-        session.flush()
-        lead_id = lead.id
+        session.execute(
+            text(
+                "INSERT INTO leads (id, company_name, company_key, extra, created_at) "
+                "VALUES (:id, :company_name, :company_key, :extra, :created_at)"
+            ),
+            {
+                "id": lead_id,
+                "company_name": "Preserved",
+                "company_key": "preserved",
+                "extra": "{}",
+                "created_at": datetime.now(timezone.utc),
+            },
+        )
     command.upgrade(config, "head")
     command.check(config)
     with factory() as session:

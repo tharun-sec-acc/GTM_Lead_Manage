@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { fetchProducts, type Product } from "../lib/products";
 import UiIcon from "./ui-icon";
+import { getApiBase } from "../lib/api-config";
 
 export default function ProductSelector() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -46,7 +47,7 @@ export default function ProductSelector() {
     setCreating(true);
     setCreateError(null);
     try {
-      const response = await fetch("http://localhost:8000/products", {
+      const response = await fetch(`${getApiBase()}/products`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName.trim(), slug: newSlug.trim() }),

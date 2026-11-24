@@ -2,8 +2,9 @@
 
 import React, { useEffect, useState, use } from "react";
 import Link from "next/link";
+import { getApiBase } from "../../../lib/api-config";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = getApiBase();
 
 interface PublicProfile {
   public_slug: string;

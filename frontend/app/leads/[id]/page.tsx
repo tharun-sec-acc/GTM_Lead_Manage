@@ -6,9 +6,11 @@ import DirectOutreachPanel from "../../../components/direct-outreach-panel";
 import IntelligenceWorkspace from "../../../components/intelligence-workspace";
 import UnifiedMeetingsView from "../../../components/unified-meetings-view";
 import UiIcon from "../../../components/ui-icon";
+import EmailComposerModal from "../../../components/email-composer-modal";
 import { fetchOpportunities, type OpportunitySignalItem } from "../../../lib/market-intelligence";
+import { getApiBase } from "../../../lib/api-config";
 
-const API = "http://localhost:8000";
+const API = getApiBase();
 type Contact = {
   id: string; name: string | null; title: string | null; email: string | null;
   source: string; verification_status: string; is_key_decision_maker: boolean;
@@ -68,6 +70,7 @@ export default function LeadProfilePage() {
   const [savingDomain, setSavingDomain] = useState(false);
   const [domainNotice, setDomainNotice] = useState("");
   const [marketSignals, setMarketSignals] = useState<OpportunitySignalItem[]>([]);
+  const [composerOpen, setComposerOpen] = useState(false);
 
   const reloadProfile = () => {
     loadProfile(params.id).then(setProfile).catch(() => {});
@@ -119,7 +122,7 @@ export default function LeadProfilePage() {
     setSavingDomain(true);
     setDomainNotice("");
     try {
-      const res = await fetch(`http://localhost:8000/leads/${encodeURIComponent(params.id)}/domain`, {
+      const res = await fetch(`${API}/leads/${encodeURIComponent(params.id)}/domain`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ domain: domainInput.trim() }),
@@ -142,19 +145,32 @@ export default function LeadProfilePage() {
   const { lead, overview } = profile;
   return <main>
     <header><div><p className="eyebrow">SOLWER GTM / LEAD 360</p><h1>{lead.company_name}</h1>
-      <p>{lead.domain || "Domain not confirmed"} · Local pilot · no sign-in</p></div>
-      <a href="/">← Lead workspace</a></header>
+      <p>{lead.domain || "Domain not confirmed"} · Multi-Tenant Workspace</p></div>
+      <a href="/dashboard#companies">← Lead workspace</a></header>
     <div className="actions">
-      <a className="button-link" href="#research"><UiIcon name="spark" size={16} /> Research company</a>
-      <a className="button-link secondary" href="#contacts"><UiIcon name="mail" size={16} /> Compose and send emails</a>
-      <a className="button-link secondary" href="#contacts">Select people</a>
-      <a className="button-link secondary" href={`/?lead=${encodeURIComponent(lead.id)}#companies`}><UiIcon name="search" size={16} /> Find people with Apollo</a>
+      <button
+        type="button"
+        className="button-link"
+        style={{
+          background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)",
+          color: "#ffffff",
+          border: "none",
+          cursor: "pointer",
+          fontWeight: "600",
+        }}
+        onClick={() => setComposerOpen(true)}
+      >
+        <UiIcon name="mail" size={16} /> Send Direct Email (Gmail / Outlook)
+      </button>
+      <a className="button-link secondary" href="#research"><UiIcon name="spark" size={16} /> Research company</a>
+      <a className="button-link secondary" href="#contacts"><UiIcon name="mail" size={16} /> Sequence templates</a>
+      <a className="button-link secondary" href={`/dashboard?lead=${encodeURIComponent(lead.id)}#companies`}><UiIcon name="search" size={16} /> Find people with Apollo</a>
       <button
         type="button"
         className="button-link secondary"
         onClick={async () => {
           try {
-            const res = await fetch(`http://localhost:8000/zoho/sync/leads/${encodeURIComponent(lead.id)}`, { method: "POST" });
+            const res = await fetch(`${API}/zoho/sync/leads/${encodeURIComponent(lead.id)}`, { method: "POST" });
             const data = await res.json();
             if (res.ok) alert(`Synced to Zoho CRM! Account ID: ${data.zoho_account_id || "Updated"}`);
             else alert(data?.detail || "Sync to Zoho failed (check if Zoho CRM is connected).");
@@ -166,9 +182,20 @@ export default function LeadProfilePage() {
       >
         <UiIcon name="link" size={16} /> Sync to Zoho CRM
       </button>
+      <a className="text-link" href="/settings/email-accounts">Email Accounts <UiIcon name="arrow" size={15} /></a>
       <a className="text-link" href="/zoho">Zoho CRM Settings <UiIcon name="arrow" size={15} /></a>
       <a className="text-link" href="/followups">Mailbox &amp; tracking <UiIcon name="arrow" size={15} /></a>
     </div>
+
+    {/* Direct Email Composer Modal */}
+    <EmailComposerModal
+      isOpen={composerOpen}
+      onClose={() => setComposerOpen(false)}
+      onSent={() => reloadProfile()}
+      leadId={lead.id}
+      defaultRecipient={lead.email || profile.contacts[0]?.email || ""}
+      defaultSubject={`Exploring Solutions for ${lead.company_name}`}
+    />
     <div className="alert">This profile contains existing pilot data only. Empty or unimplemented sections are labeled; no CRM stage, meeting, research or commercial records are fabricated.</div>
     <div className="stats">
       <a href="#contacts" className="stat-card" title="Click to view & select contacts">

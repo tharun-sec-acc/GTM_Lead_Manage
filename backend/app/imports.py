@@ -181,10 +181,11 @@ def process_batch(session: Session, batch_id: str):
             company_key = re.sub(r"\s+", " ", company.casefold()).strip()
             duplicate = None
             if not error:
+                org_filter = [Lead.organization_id == batch.organization_id] if getattr(batch, "organization_id", None) else []
                 if email:
-                    duplicate = session.scalar(select(Lead).where(func.lower(Lead.email) == email.lower()))
+                    duplicate = session.scalar(select(Lead).where(func.lower(Lead.email) == email.lower(), *org_filter))
                 if duplicate is None:
-                    duplicate = session.scalar(select(Lead).where(Lead.company_key == company_key))
+                    duplicate = session.scalar(select(Lead).where(Lead.company_key == company_key, *org_filter))
             if error:
                 session.add(ImportRow(batch_id=batch.id, sheet_name=sheet_name, row_number=row_number,
                                       original=original, status="invalid", message=error))
@@ -209,6 +210,7 @@ def process_batch(session: Session, batch_id: str):
             else:
                 used = {value for value in sheet_mapping.values() if value}
                 lead = Lead(
+                    organization_id=getattr(batch, "organization_id", None),
                     company_name=company, company_key=company_key, email=email or None,
                     domain=domain or None,
                     designation=values["designation"] or None,

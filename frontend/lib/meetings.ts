@@ -1,4 +1,6 @@
-export const API = "http://localhost:8000";
+import { getApiBase } from "./api-config";
+
+export const API = getApiBase();
 
 export interface ProviderStatus {
   provider: "teams" | "google_meet";

@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useState } from "react";
 import UnifiedMeetingsView from "../../components/unified-meetings-view";
 import BookingManagement from "../../components/booking-management";
+import { getApiBase } from "../../lib/api-config";
 
-const API = "http://localhost:8000";
+const API = getApiBase();
 
 type Availability = {
   timezone: string;

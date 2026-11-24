@@ -16,6 +16,7 @@ class CompanyResearchProfile(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     lead_id: Mapped[str | None] = mapped_column(ForeignKey("leads.id", ondelete="SET NULL"), nullable=True)
     company_name: Mapped[str] = mapped_column(String(500))
     domain: Mapped[str] = mapped_column(String(253), nullable=False)

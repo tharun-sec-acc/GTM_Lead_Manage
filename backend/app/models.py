@@ -5,6 +5,17 @@ from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, Larg
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
+from app.auth.models import (
+    Organization,
+    User,
+    OrganizationMember,
+    OrganizationInvitation,
+    PasswordResetToken,
+    EmailVerificationToken,
+    RevokedToken,
+    AuditLog,
+    OAuthConnection,
+)
 
 
 def new_id():
@@ -18,6 +29,7 @@ def now():
 class Batch(Base):
     __tablename__ = "batches"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     filename: Mapped[str] = mapped_column(String(255))
     content: Mapped[bytes] = mapped_column(LargeBinary)
     headers: Mapped[list] = mapped_column(JSON)
@@ -32,6 +44,7 @@ class Batch(Base):
 class Lead(Base):
     __tablename__ = "leads"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     company_name: Mapped[str] = mapped_column(String(500))
     company_key: Mapped[str] = mapped_column(String(500), index=True)
     domain: Mapped[str | None] = mapped_column(String(253))
@@ -64,6 +77,7 @@ class Contact(Base):
     __tablename__ = "contacts"
     __table_args__ = (UniqueConstraint("lead_id", "apollo_id", name="uq_contact_apollo"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     lead_id: Mapped[str] = mapped_column(ForeignKey("leads.id"))
     apollo_id: Mapped[str | None] = mapped_column(String(100))
     name: Mapped[str | None] = mapped_column(String(500))
@@ -101,6 +115,7 @@ class ApolloSearchResult(Base):
 class Campaign(Base):
     __tablename__ = "campaigns"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
     mode: Mapped[str] = mapped_column(String(20))
     delays: Mapped[list] = mapped_column(JSON)
@@ -243,6 +258,7 @@ class MicrosoftOAuthCredential(Base):
 class Product(Base):
     __tablename__ = "products"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
     slug: Mapped[str] = mapped_column(String(100), unique=True)
     description: Mapped[str | None] = mapped_column(Text)
@@ -292,6 +308,7 @@ class ProductOpportunity(Base):
 class EmailTemplate(Base):
     __tablename__ = "email_templates"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     product_id: Mapped[str | None] = mapped_column(ForeignKey("products.id"), nullable=True)
     parent_template_id: Mapped[str | None] = mapped_column(ForeignKey("email_templates.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(200))

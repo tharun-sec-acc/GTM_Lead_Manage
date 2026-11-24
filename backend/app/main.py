@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request,
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app import apollo
@@ -33,8 +33,21 @@ from app.booking.routes import router as booking_router
 from app.booking.models import Booking
 from app.zoho.routes import router as zoho_router
 from app.market_intelligence.routes import router as market_intelligence_router
+from app.auth.routes import router as auth_router
+from app.auth.organizations import router as org_router, public_router as public_invitations_router
+from app.auth.integrations import router as integrations_router
+from app.email_accounts_api import router as email_accounts_router
+from app.auth.dependencies import get_tenant_context, TenantContext
+from app.config import settings
 
-app = FastAPI(title="DENSO Prospecting Pilot")
+app = FastAPI(title="Solwer GTM Lead Management & Sales Intelligence Platform")
+app.include_router(auth_router)
+app.include_router(auth_router, prefix="/api")
+app.include_router(org_router)
+app.include_router(org_router, prefix="/api")
+app.include_router(public_invitations_router)
+app.include_router(integrations_router)
+app.include_router(email_accounts_router)
 app.include_router(followup_router)
 app.include_router(public_router)
 app.include_router(google_router)
@@ -50,21 +63,32 @@ app.include_router(booking_router, prefix="/api")
 app.include_router(zoho_router)
 app.include_router(zoho_router, prefix="/api")
 app.include_router(market_intelligence_router)
+
+cors_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Content-Type"],
+    allow_origins=cors_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
 @app.middleware("http")
 async def reject_cross_origin_mutations(request: Request, call_next):
     origin = request.headers.get("origin")
+    allowed_set = set(cors_origins)
+    is_allowed = (
+        not origin or
+        origin in allowed_set or
+        bool(re.match(r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$", origin))
+    )
     if (request.method not in ("GET", "HEAD", "OPTIONS") and
-        not request.url.path.startswith("/public/unsubscribe/") and origin and origin not in {
-        "http://localhost:3000", "http://127.0.0.1:3000"
-    }):
+        not request.url.path.startswith("/public/") and
+        not request.url.path.startswith("/auth/") and
+        not request.url.path.startswith("/api/public/") and
+        not is_allowed):
         return JSONResponse(status_code=403, content={"detail": "Origin not allowed."})
     return await call_next(request)
 
@@ -179,6 +203,7 @@ def health():
 
 @app.post("/batches", status_code=201)
 async def upload_batch(file: UploadFile = File(...), product_id: str | None = Form(default=None),
+                      ctx: TenantContext = Depends(get_tenant_context),
                       session: Session = Depends(get_db)):
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(400, "Upload an .xlsx file.")
@@ -199,7 +224,7 @@ async def upload_batch(file: UploadFile = File(...), product_id: str | None = Fo
     headers = active["headers"] if active else []
     batch = Batch(filename=file.filename[:255], content=content, headers=headers,
                   sheet_headers={name: sheet["headers"] for name, sheet in sheets.items()}, status="draft",
-                  product_id=product_id)
+                  product_id=product_id, organization_id=ctx.org_id)
     session.add(batch)
     session.commit()
     return {"id": batch.id, "headers": headers,
@@ -256,13 +281,17 @@ def retry_batch(batch_id: str, session: Session = Depends(get_db)):
 
 
 @app.get("/batches")
-def batches(product_id: str | None = Query(default=None), session: Session = Depends(get_db)):
-    query = select(Batch).order_by(Batch.created_at.desc()).limit(100)
+def batches(
+    product_id: str | None = Query(default=None),
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_db),
+):
+    query = select(Batch).where(
+        or_(Batch.organization_id == ctx.org_id, Batch.organization_id.is_(None))
+    )
     if product_id:
-        query = select(Batch).where(Batch.product_id == product_id).order_by(
-            Batch.created_at.desc()
-        ).limit(100)
-    results = session.scalars(query).all()
+        query = query.where(Batch.product_id == product_id)
+    results = session.scalars(query.order_by(Batch.created_at.desc()).limit(100)).all()
     return [{"id": b.id, "filename": b.filename, "status": b.status, "error": b.error,
              "product_id": b.product_id} for b in results]
 
@@ -295,10 +324,14 @@ def preview_batch(batch_id: str, session: Session = Depends(get_db)):
 
 
 @app.get("/leads")
-def leads(session: Session = Depends(get_db)):
-    return [lead_response(lead) for lead in session.scalars(
-        select(Lead).order_by(Lead.created_at.desc()).limit(1000)
-    ).all()]
+def leads(
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_db),
+):
+    query = select(Lead).where(
+        or_(Lead.organization_id == ctx.org_id, Lead.organization_id.is_(None))
+    ).order_by(Lead.created_at.desc()).limit(1000)
+    return [lead_response(lead) for lead in session.scalars(query).all()]
 
 
 def utc_timestamp(value: datetime) -> datetime:
@@ -666,12 +699,16 @@ def list_contacts(
     lead_id: str | None = None,
     product_id: str | None = None,
     limit: int = Query(default=500, ge=1, le=1000),
+    ctx: TenantContext = Depends(get_tenant_context),
     session: Session = Depends(get_db)
 ):
     query = (
         select(Contact, Lead.company_name, Lead.email.label("lead_email"))
         .join(Lead, Contact.lead_id == Lead.id)
-        .where(Contact.is_active.is_(True))
+        .where(
+            Contact.is_active.is_(True),
+            or_(Lead.organization_id == ctx.org_id, Lead.organization_id.is_(None))
+        )
     )
     if lead_id:
         query = query.where(Contact.lead_id == lead_id)
@@ -699,9 +736,15 @@ def contacts(lead_id: str, session: Session = Depends(get_db)):
 
 
 @app.post("/leads/{lead_id}/contacts", status_code=201)
-def create_contact(lead_id: str, data: ContactCreate, session: Session = Depends(get_db)):
+def create_contact(
+    lead_id: str,
+    data: ContactCreate,
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_db)
+):
     require_lead(session, lead_id)
     contact = Contact(
+        organization_id=ctx.org_id,
         lead_id=lead_id, apollo_id=None, name=data.name.strip(), title=data.title,
         email=validate_contact_email(data.email), department=data.department, seniority=data.seniority,
         linkedin_url=data.linkedin_url, location=data.location,

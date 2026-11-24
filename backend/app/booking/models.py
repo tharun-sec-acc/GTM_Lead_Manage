@@ -28,6 +28,7 @@ class BookingProfile(Base):
     __tablename__ = "booking_profiles"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     owner_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     public_slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)

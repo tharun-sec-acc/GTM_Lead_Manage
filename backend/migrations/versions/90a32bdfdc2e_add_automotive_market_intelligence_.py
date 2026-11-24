@@ -274,6 +274,25 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_market_feedback_opportunity_id'), 'market_feedback', ['opportunity_id'], unique=False)
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+
+    def safe_drop_index(idx, tbl):
+        try:
+            indexes = [i['name'] for i in insp.get_indexes(tbl)]
+            if idx in indexes:
+                op.drop_index(idx, table_name=tbl)
+        except Exception:
+            pass
+
+    def safe_create_index(name, tbl, cols, unique=False):
+        try:
+            indexes = [i['name'] for i in insp.get_indexes(tbl)]
+            if name not in indexes:
+                op.create_index(name, tbl, cols, unique=unique)
+        except Exception:
+            pass
+
     for idx, tbl in [
         ('ix_booking_availabilities_profile', 'booking_availabilities'),
         ('ix_booking_event_logs_booking', 'booking_event_logs'),
@@ -288,27 +307,27 @@ def upgrade() -> None:
         ('ix_bookings_reschedule_token', 'bookings'),
         ('ix_meetings_external_id', 'meetings'),
     ]:
-        try:
-            op.drop_index(op.f(idx), table_name=tbl, if_exists=True)
-        except Exception:
-            pass
+        safe_drop_index(idx, tbl)
+
+    safe_create_index('ix_booking_availabilities_booking_profile_id', 'booking_availabilities', ['booking_profile_id'], unique=False)
+    safe_create_index('ix_booking_event_logs_booking_id', 'booking_event_logs', ['booking_id'], unique=False)
+    safe_create_index('ix_booking_event_logs_event_type', 'booking_event_logs', ['event_type'], unique=False)
+    safe_create_index('ix_booking_reservations_booking_profile_id', 'booking_reservations', ['booking_profile_id'], unique=False)
+    safe_create_index('ix_booking_reservations_reservation_token_hash', 'booking_reservations', ['reservation_token_hash'], unique=True)
+    safe_create_index('ix_bookings_booking_profile_id', 'bookings', ['booking_profile_id'], unique=False)
+    safe_create_index('ix_bookings_cancellation_token_hash', 'bookings', ['cancellation_token_hash'], unique=True)
+    safe_create_index('ix_bookings_google_calendar_event_id', 'bookings', ['google_calendar_event_id'], unique=False)
+    safe_create_index('ix_bookings_lead_id', 'bookings', ['lead_id'], unique=False)
+    safe_create_index('ix_bookings_meeting_id', 'bookings', ['meeting_id'], unique=False)
+    safe_create_index('ix_bookings_reschedule_token_hash', 'bookings', ['reschedule_token_hash'], unique=True)
     try:
-        op.create_index(op.f('ix_booking_availabilities_booking_profile_id'), 'booking_availabilities', ['booking_profile_id'], unique=False)
-        op.create_index(op.f('ix_booking_event_logs_booking_id'), 'booking_event_logs', ['booking_id'], unique=False)
-        op.create_index(op.f('ix_booking_event_logs_event_type'), 'booking_event_logs', ['event_type'], unique=False)
-        op.create_index(op.f('ix_booking_reservations_booking_profile_id'), 'booking_reservations', ['booking_profile_id'], unique=False)
-        op.create_index(op.f('ix_booking_reservations_reservation_token_hash'), 'booking_reservations', ['reservation_token_hash'], unique=True)
-        op.create_index(op.f('ix_bookings_booking_profile_id'), 'bookings', ['booking_profile_id'], unique=False)
-        op.create_index(op.f('ix_bookings_cancellation_token_hash'), 'bookings', ['cancellation_token_hash'], unique=True)
-        op.create_index(op.f('ix_bookings_google_calendar_event_id'), 'bookings', ['google_calendar_event_id'], unique=False)
-        op.create_index(op.f('ix_bookings_lead_id'), 'bookings', ['lead_id'], unique=False)
-        op.create_index(op.f('ix_bookings_meeting_id'), 'bookings', ['meeting_id'], unique=False)
-        op.create_index(op.f('ix_bookings_reschedule_token_hash'), 'bookings', ['reschedule_token_hash'], unique=True)
-        op.drop_constraint(op.f('meeting_analyses_meeting_id_key'), 'meeting_analyses', type_='unique')
-        op.create_index(op.f('ix_meeting_analyses_meeting_id'), 'meeting_analyses', ['meeting_id'], unique=True)
-        op.create_index(op.f('ix_meetings_external_meeting_id'), 'meetings', ['external_meeting_id'], unique=False)
+        unique_constraints = [c['name'] for c in insp.get_unique_constraints('meeting_analyses')]
+        if 'meeting_analyses_meeting_id_key' in unique_constraints:
+            op.drop_constraint('meeting_analyses_meeting_id_key', 'meeting_analyses', type_='unique')
     except Exception:
         pass
+    safe_create_index('ix_meeting_analyses_meeting_id', 'meeting_analyses', ['meeting_id'], unique=True)
+    safe_create_index('ix_meetings_external_meeting_id', 'meetings', ['external_meeting_id'], unique=False)
     # ### end Alembic commands ###
 
 

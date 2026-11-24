@@ -205,6 +205,7 @@ class AvailabilityService:
             session, profile, start_date, end_date
         )
 
+        now_ref = min(datetime.now(timezone.utc), normalize_utc(start_dt))
         slots = generate_available_slots(
             profile=profile,
             target_timezone_str=target_timezone_str,
@@ -213,6 +214,7 @@ class AvailabilityService:
             busy_intervals=busy_intervals,
             daily_meeting_counts=daily_counts,
             duration_minutes=duration_minutes,
+            now_utc=now_ref,
         )
 
         effective_duration = duration_minutes if (duration_minutes and duration_minutes >= 10) else profile.duration_minutes

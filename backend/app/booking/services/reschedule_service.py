@@ -53,7 +53,8 @@ class RescheduleService:
 
         if new_end_utc <= new_start_utc:
             raise ValueError("New end time must be after start time.")
-        if new_start_utc < now_utc:
+        earliest_allowed = min(now_utc, normalize_utc(booking.start_time))
+        if new_start_utc < earliest_allowed:
             raise ValueError("Cannot reschedule into the past.")
 
         profile = booking.profile

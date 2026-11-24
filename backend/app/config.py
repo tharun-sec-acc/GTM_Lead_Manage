@@ -74,6 +74,21 @@ class Settings(BaseSettings):
     zoho_crm_api_version: str = "v8"
     zoho_token_encryption_key: str = ""
     zoho_sync_enabled: bool = True
+
+    # Multi-Tenant SaaS & Auth Settings
+    jwt_secret_key: str = "gtm-production-super-secret-key-change-in-env-minimum-32-chars-2026"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 120
+    jwt_refresh_token_expire_days: int = 14
+    cors_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://0.0.0.0:3000,http://[::1]:3000"
+    cookie_secure: bool = False
+    cookie_samesite: str = "lax"
+    cookie_domain: str | None = None
+    default_org_name: str = "Default Organization"
+    default_org_slug: str = "default-org"
+    auth_enabled: bool = True
+    auth_allow_anonymous_fallback: bool = True  # Allows legacy tests to fallback to default tenant seamlessly
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import UiIcon from "./ui-icon";
+import { getApiBase } from "../lib/api-config";
 
 type Lead = { id: string; company_name: string; email: string | null };
 type Contact = { id: string; name: string | null; title: string | null; email: string | null };
@@ -48,7 +49,7 @@ export default function RecipientPicker({
     if (!leadId) return;
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:8000/leads/${encodeURIComponent(leadId)}/contacts`, {
+      const response = await fetch(`${getApiBase()}/leads/${encodeURIComponent(leadId)}/contacts`, {
         cache: "no-store",
       });
       if (!response.ok) throw new Error("Could not load saved contacts.");
@@ -85,7 +86,7 @@ export default function RecipientPicker({
     if (!newName.trim() || !newEmail.trim()) return;
     setAddingContact(true);
     try {
-      const res = await fetch(`http://localhost:8000/leads/${encodeURIComponent(leadId)}/contacts`, {
+      const res = await fetch(`${getApiBase()}/leads/${encodeURIComponent(leadId)}/contacts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName.trim(), title: newTitle.trim() || null, email: newEmail.trim() }),
@@ -313,7 +314,7 @@ export default function RecipientPicker({
               onClick={() =>
                 act(async () => {
                   const response = await fetch(
-                    `http://localhost:8000/campaigns/${encodeURIComponent(campaignId)}/enrollments/bulk`,
+                    `${getApiBase()}/campaigns/${encodeURIComponent(campaignId)}/enrollments/bulk`,
                     {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },

@@ -28,6 +28,8 @@ class Meeting(Base):
     __tablename__ = "meetings"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)  # "teams" | "google_meet"
     external_meeting_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     organizer_email: Mapped[str | None] = mapped_column(String(320), nullable=True)

@@ -11,8 +11,10 @@ from urllib.parse import urlsplit
 from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
+
+from app.auth.dependencies import TenantContext, get_tenant_context
 
 from app import bedrock
 from app.config import settings
@@ -110,7 +112,11 @@ def message_dict(message: EmailMessage):
 
 
 @router.post("/campaigns", status_code=201)
-def create_campaign(data: CampaignInput, session: Session = Depends(get_db)):
+def create_campaign(
+    data: CampaignInput,
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_db),
+):
     if data.mode not in ("manual", "automatic") or any(day < 1 or day > 365 for day in data.delays):
         raise HTTPException(400, "Choose manual or automatic mode and delays between 1 and 365 days.")
     if data.product_id:
@@ -119,7 +125,14 @@ def create_campaign(data: CampaignInput, session: Session = Depends(get_db)):
             raise HTTPException(404, "Product not found.")
         if product.status != "active":
             raise HTTPException(422, "Product is archived and cannot receive new campaigns.")
-    campaign = Campaign(name=data.name.strip(), mode=data.mode, delays=data.delays, status="draft", product_id=data.product_id)
+    campaign = Campaign(
+        name=data.name.strip(),
+        mode=data.mode,
+        delays=data.delays,
+        status="draft",
+        product_id=data.product_id,
+        organization_id=ctx.org_id,
+    )
     if not campaign.name:
         raise HTTPException(400, "Campaign name is required.")
     session.add(campaign)
@@ -128,8 +141,14 @@ def create_campaign(data: CampaignInput, session: Session = Depends(get_db)):
 
 
 @router.get("/campaigns")
-def list_campaigns(product_id: str | None = Query(default=None), session: Session = Depends(get_db)):
-    query = select(Campaign).order_by(Campaign.created_at.desc())
+def list_campaigns(
+    product_id: str | None = Query(default=None),
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_db),
+):
+    query = select(Campaign).where(
+        or_(Campaign.organization_id == ctx.org_id, Campaign.organization_id.is_(None))
+    ).order_by(Campaign.created_at.desc())
     if product_id:
         query = query.where(Campaign.product_id == product_id)
     campaigns = session.scalars(query).all()

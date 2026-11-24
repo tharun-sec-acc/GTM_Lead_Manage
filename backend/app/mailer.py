@@ -264,8 +264,31 @@ def send_claimed(message_id: str):
         if not settings.mail_send_enabled:
             message.status, message.last_error = "approved", "Sending is disabled in configuration."
             return
-        if not settings.gmail_address or not settings.gmail_app_password:
-            message.status, message.last_error = "failed", "Gmail credentials are not configured."
+
+        # Check for active OAuth email connection (multi-tenant Gmail or Microsoft Graph)
+        from app.auth.models import OAuthConnection
+        from app.email_provider import get_email_provider, EmailProviderError
+
+        oauth_conn = None
+        org_id = getattr(campaign, "organization_id", None)
+        if org_id:
+            oauth_conn = session.scalar(
+                select(OAuthConnection).where(
+                    OAuthConnection.organization_id == org_id,
+                    OAuthConnection.provider.in_(["google", "microsoft"]),
+                    OAuthConnection.status == "connected",
+                ).order_by(OAuthConnection.updated_at.desc())
+            )
+        if not oauth_conn:
+            oauth_conn = session.scalar(
+                select(OAuthConnection).where(
+                    OAuthConnection.provider.in_(["google", "microsoft"]),
+                    OAuthConnection.status == "connected",
+                ).order_by(OAuthConnection.updated_at.desc())
+            )
+
+        if not oauth_conn and (not settings.gmail_address or not settings.gmail_app_password):
+            message.status, message.last_error = "failed", "No connected email account or Gmail SMTP credentials configured."
             return
         if not message.approved_at:
             message.status, message.last_error = "draft", "This email requires approval."
@@ -286,17 +309,27 @@ def send_claimed(message_id: str):
         if uncertain:
             message.status, message.last_error = "approved", "A previous send to this recipient needs reconciliation."
             return
-        try:
-            synced = poll_mailbox(session)
-        except RuntimeError as exc:
-            state = session.get(MailboxState, 1)
-            if state:
-                state.last_success_at, state.last_error = None, str(exc)
-            message.status, message.last_error = "approved", str(exc)
-            return
-        if not synced:
-            message.status, message.last_error = "approved", "Inbox sync is incomplete."
-            return
+
+        # Synchronize mailbox before sending to prevent outreach if customer recently replied
+        if oauth_conn:
+            try:
+                provider = get_email_provider(oauth_conn)
+                provider.sync_inbox(session, max_messages=25)
+            except Exception as sync_exc:
+                logger.warning("Pre-send OAuth inbox sync warning for %s: %s", oauth_conn.account_email, sync_exc)
+        else:
+            try:
+                synced = poll_mailbox(session)
+            except RuntimeError as exc:
+                state = session.get(MailboxState, 1)
+                if state:
+                    state.last_success_at, state.last_error = None, str(exc)
+                message.status, message.last_error = "approved", str(exc)
+                return
+            if not synced:
+                message.status, message.last_error = "approved", "Inbox sync is incomplete."
+                return
+
         session.flush()
         if (enrollment.reply_blocked and not message.manual_reply) or session.get(Suppression, enrollment.recipient):
             message.status, message.last_error = "approved", "Reply or suppression detected."
@@ -314,33 +347,66 @@ def send_claimed(message_id: str):
         if settings.daily_send_limit < 1 or attempts > settings.daily_send_limit:
             message.status, message.last_error = "approved", "Configured daily sending limit reached."
             return
-        try:
-            mime = message_content(session, message, enrollment)
-        except (RuntimeError, ValueError) as exc:
-            message.status, message.last_error = "failed", str(exc)
-            return
-        smtp = None
-        try:
-            smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
-            smtp.starttls(context=ssl.create_default_context())
-            smtp.login(settings.gmail_address, settings.gmail_app_password)
-        except (smtplib.SMTPException, OSError) as exc:
-            if smtp:
+
+        # Dispatch via OAuth provider (Gmail API / Microsoft Graph API) if connected
+        if oauth_conn:
+            try:
+                provider = get_email_provider(oauth_conn)
+                base = public_base() if (settings.tracking_enabled and settings.public_base_url) else ""
+                tracking = settings.tracking_enabled and bool(base)
+                pixel = f"{base}/public/open/{message.open_token}" if (tracking and base) else None
+                html_markup = _markdown_to_email_html(message.body, tracking_pixel_url=pixel)
+
+                provider.send_email(
+                    session=session,
+                    recipient=enrollment.recipient,
+                    subject=message.subject,
+                    body_html=html_markup,
+                    body_text=_clean_plain_text(message.body),
+                    lead_id=enrollment.lead_id,
+                )
+                message.status, message.sent_at, message.last_error = "sent", now(), None
+                session.add(EmailEvent(email_id=message.id, event_type=f"{oauth_conn.provider}_accepted"))
+                logger.info(
+                    "Sent campaign email %s to %s via %s (%s)",
+                    message.id, enrollment.recipient, oauth_conn.provider, oauth_conn.account_email,
+                )
+            except EmailProviderError as prov_err:
+                message.status, message.last_error = "failed", str(prov_err)
+                return
+            except Exception as prov_exc:
+                logger.exception("Unexpected error during OAuth campaign sending: %s", prov_exc)
+                message.status, message.last_error = "failed", f"OAuth sending failed: {prov_exc}"
+                return
+        else:
+            # Fallback to legacy SMTP
+            try:
+                mime = message_content(session, message, enrollment)
+            except (RuntimeError, ValueError) as exc:
+                message.status, message.last_error = "failed", str(exc)
+                return
+            smtp = None
+            try:
+                smtp = smtplib.SMTP("smtp.gmail.com", 587, timeout=30)
+                smtp.starttls(context=ssl.create_default_context())
+                smtp.login(settings.gmail_address, settings.gmail_app_password)
+            except (smtplib.SMTPException, OSError) as exc:
+                if smtp:
+                    smtp.close()
+                message.status, message.last_error = "failed", f"SMTP connection or authentication failed: {type(exc).__name__}"
+                return
+            try:
+                smtp.send_message(mime)
+            except (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused, smtplib.SMTPDataError) as exc:
+                message.status, message.last_error = "failed", f"SMTP rejected the message: {type(exc).__name__}"
+                return
+            except (smtplib.SMTPException, OSError) as exc:
+                message.status, message.last_error = "unknown", f"SMTP outcome is unknown: {type(exc).__name__}"
+                return
+            finally:
                 smtp.close()
-            message.status, message.last_error = "failed", f"SMTP connection or authentication failed: {type(exc).__name__}"
-            return
-        try:
-            smtp.send_message(mime)
-        except (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused, smtplib.SMTPDataError) as exc:
-            message.status, message.last_error = "failed", f"SMTP rejected the message: {type(exc).__name__}"
-            return
-        except (smtplib.SMTPException, OSError) as exc:
-            message.status, message.last_error = "unknown", f"SMTP outcome is unknown: {type(exc).__name__}"
-            return
-        finally:
-            smtp.close()
-        message.status, message.sent_at, message.last_error = "sent", now(), None
-        session.add(EmailEvent(email_id=message.id, event_type="smtp_accepted"))
+            message.status, message.sent_at, message.last_error = "sent", now(), None
+            session.add(EmailEvent(email_id=message.id, event_type="smtp_accepted"))
         next_message = session.scalar(select(EmailMessage).where(
             EmailMessage.enrollment_id == enrollment.id,
             EmailMessage.step_number == message.step_number + 1,

@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import UiIcon from "./ui-icon";
+import { getApiBase } from "../lib/api-config";
 
-const API = "http://localhost:8000";
+const API = getApiBase();
 
 type Contact = {
   id: string;

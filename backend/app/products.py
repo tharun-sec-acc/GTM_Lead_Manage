@@ -5,8 +5,10 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
+
+from app.auth.dependencies import TenantContext, get_tenant_context
 
 from app.database import get_db
 from app.models import (
@@ -217,8 +219,14 @@ def _date_bound(value: str | None, end: bool = False) -> datetime | None:
 # ---- Product CRUD ----
 
 @router.get("/products")
-def list_products(status: str | None = Query(default=None), session: Session = Depends(get_db)):
-    q = select(Product).order_by(Product.name)
+def list_products(
+    status: str | None = Query(default=None),
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_db),
+):
+    q = select(Product).where(
+        or_(Product.organization_id == ctx.org_id, Product.organization_id.is_(None))
+    ).order_by(Product.name)
     if status:
         if status not in VALID_PRODUCT_STATUSES:
             raise HTTPException(422, f"status must be one of: {VALID_PRODUCT_STATUSES}")
@@ -227,11 +235,16 @@ def list_products(status: str | None = Query(default=None), session: Session = D
 
 
 @router.post("/products", status_code=201)
-def create_product(data: ProductCreate, session: Session = Depends(get_db)):
+def create_product(
+    data: ProductCreate,
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_db),
+):
     existing = session.scalar(select(Product).where(Product.slug == data.slug))
     if existing:
         raise HTTPException(409, f"A product with slug '{data.slug}' already exists.")
     product = Product(
+        organization_id=ctx.org_id,
         name=data.name, slug=data.slug, description=data.description,
         short_description=data.short_description, logo_url=data.logo_url,
         primary_color=data.primary_color, status=data.status,

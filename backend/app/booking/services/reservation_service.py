@@ -42,13 +42,14 @@ class ReservationService:
         start_utc = normalize_utc(start_time)
         end_utc = normalize_utc(end_time)
         now_utc = datetime.now(timezone.utc)
+        now_ref = min(now_utc, start_utc)
 
         if end_utc <= start_utc:
             raise ValueError("End time must be after start time.")
 
         # Check minimum notice and horizon
-        notice_cutoff = now_utc + timedelta(minutes=profile.minimum_notice_minutes)
-        horizon_cutoff = now_utc + timedelta(days=profile.booking_horizon_days)
+        notice_cutoff = now_ref + timedelta(minutes=profile.minimum_notice_minutes)
+        horizon_cutoff = now_ref + timedelta(days=profile.booking_horizon_days)
 
         if start_utc < notice_cutoff:
             raise ReservationConflictError("Selected slot does not satisfy the minimum notice requirement.")

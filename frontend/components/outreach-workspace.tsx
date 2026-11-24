@@ -7,8 +7,9 @@ import LeadConversationWorkspace from "./lead-conversation-workspace";
 import RecipientPicker from "./recipient-picker";
 import ResearchFactPicker from "./research-fact-picker";
 import UiIcon from "./ui-icon";
+import { getApiBase } from "../lib/api-config";
 
-const API = "http://localhost:8000";
+const API = getApiBase();
 type Lead = { id: string; company_name: string; email: string | null };
 type Campaign = { id: string; name: string; mode: "manual" | "automatic"; delays: number[]; status: string };
 type Event = { event_type: string; event_time: string };

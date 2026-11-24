@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import UiIcon from "./ui-icon";
+import { getApiBase } from "../lib/api-config";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API = getApiBase();
 
 interface WeekdayAvailability {
   weekday: number;

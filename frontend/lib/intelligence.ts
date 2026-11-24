@@ -1,4 +1,6 @@
-export const API = "http://localhost:8000";
+import { getApiBase } from "./api-config";
+
+export const API = getApiBase();
 
 export async function intelligenceRequest<T>(path: string, method = "GET", data?: unknown): Promise<T> {
   const response = await fetch(API + path, {

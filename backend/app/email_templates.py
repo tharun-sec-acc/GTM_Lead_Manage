@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import TenantContext, get_tenant_context
 from app.database import get_db
 from app.models import EmailTemplate, EmailTemplateVersion, Product, now
 
@@ -98,9 +99,12 @@ def list_templates(
     product_id: str | None = Query(default=None),
     type: str | None = Query(default=None),
     is_active: bool | None = Query(default=None),
+    ctx: TenantContext = Depends(get_tenant_context),
     session: Session = Depends(get_db),
 ):
-    q = select(EmailTemplate).order_by(EmailTemplate.name)
+    q = select(EmailTemplate).where(
+        or_(EmailTemplate.organization_id == ctx.org_id, EmailTemplate.organization_id.is_(None))
+    ).order_by(EmailTemplate.name)
     if product_id == "global":
         q = q.where(EmailTemplate.product_id.is_(None))
     elif product_id:
@@ -113,7 +117,11 @@ def list_templates(
 
 
 @router.post("/templates", status_code=201)
-def create_template(data: TemplateCreate, session: Session = Depends(get_db)):
+def create_template(
+    data: TemplateCreate,
+    ctx: TenantContext = Depends(get_tenant_context),
+    session: Session = Depends(get_db),
+):
     if data.type not in TEMPLATE_TYPES:
         raise HTTPException(422, f"type must be one of: {sorted(TEMPLATE_TYPES)}")
     # Validate variables before persisting
@@ -130,6 +138,7 @@ def create_template(data: TemplateCreate, session: Session = Depends(get_db)):
             raise HTTPException(404, "Parent template not found.")
     variables = _extract_variables(data.subject_template + " " + data.body_template)
     t = EmailTemplate(
+        organization_id=ctx.org_id,
         product_id=data.product_id, parent_template_id=data.parent_template_id,
         name=data.name, type=data.type,
         subject_template=data.subject_template, body_template=data.body_template,

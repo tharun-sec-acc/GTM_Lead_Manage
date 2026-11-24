@@ -1,4 +1,6 @@
-export const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { getApiBase } from "./api-config";
+
+export const API = getApiBase();
 
 export interface MarketIntelligenceOverview {
   signals_today: number;
